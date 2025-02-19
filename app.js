@@ -38,10 +38,6 @@ document.getElementById('start-btn').addEventListener('click', async () => {
         const zipBatches = await createZipBatches(files);
         addLog(`✔ Creados ${zipBatches.length} lotes ZIP`);
 
-        addLog('Guardando progreso...');
-        await saveProgress(zipBatches);
-        addLog('✔ Progreso guardado');
-
         addLog('Iniciando subida a GitHub...');
         await processBatches(zipBatches);
         
@@ -87,17 +83,17 @@ async function createZipBatches(files) {
 // ========== FUNCIÓN processBatches ACTUALIZADA ==========
 async function processBatches(batches) {
     try {
-        const storedBatches = await getStoredProgress();
-        const batchesToProcess = storedBatches.length > 0 ? storedBatches : batches;
+        const lastProcessedIndex = await getStoredProgress();
+        const startIndex = lastProcessedIndex || 0;
 
-        for (const [index, batch] of batchesToProcess.entries()) {
+        for (let index = startIndex; index < batches.length; index++) {
             try {
-                addLog(`Procesando lote ${index + 1}/${batchesToProcess.length}...`);
-                const zipBlob = await batch.generateAsync({ type: 'blob' });
+                addLog(`Procesando lote ${index + 1}/${batches.length}...`);
+                const zipBlob = await batches[index].generateAsync({ type: 'blob' });
                 addLog(`Subiendo lote ${index + 1}...`);
                 await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
                 addLog(`✔ Lote ${index + 1} subido`);
-                await updateProgress(index);
+                await saveProgress(index);
             } catch (batchError) {
                 addLog(`❌ Falló el lote ${index + 1}: ${batchError.message}`, true);
                 throw batchError;
@@ -150,31 +146,14 @@ async function uploadZip(blob, zipName) {
 }
 
 // ========== FUNCIÓN saveProgress ==========
-async function saveProgress(batches) {
-    const serializedBatches = await Promise.all(batches.map(async (batch) => {
-        return await batch.generateAsync({ type: "base64" });
-    }));
-    localStorage.setItem('batchesProgress', JSON.stringify(serializedBatches));
+function saveProgress(index) {
+    localStorage.setItem('lastProcessedIndex', index.toString());
 }
 
 // ========== FUNCIÓN getStoredProgress ==========
-async function getStoredProgress() {
-    const stored = localStorage.getItem('batchesProgress');
-    if (stored) {
-        return JSON.parse(stored).map(base64 => {
-            const zip = new JSZip();
-            zip.loadAsync(base64);
-            return zip;
-        });
-    }
-    return [];
-}
-
-// ========== FUNCIÓN updateProgress ==========
-async function updateProgress(index) {
-    const stored = await getStoredProgress();
-    stored.splice(0, index + 1);
-    await saveProgress(stored);
+function getStoredProgress() {
+    const lastProcessedIndex = localStorage.getItem('lastProcessedIndex');
+    return lastProcessedIndex ? parseInt(lastProcessedIndex) : 0;
 }
 
 // ========== FUNCIÓN blobToBase64 ==========
