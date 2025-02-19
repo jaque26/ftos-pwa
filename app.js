@@ -104,10 +104,29 @@ async function saveProgress(batches) {
         })
     );
 
-    // Guardar en IndexedDB
-    await store.clear();
-    await store.add({ batches: serializedBatches, timestamp: Date.now() });
-    await tx.done;
+    try {
+        // Limpiar antes de añadir
+        const clearRequest = store.clear();
+        await new Promise((resolve, reject) => {
+            clearRequest.onsuccess = resolve;
+            clearRequest.onerror = reject;
+        });
+        
+        // Añadir el nuevo registro
+        const addRequest = store.add({ batches: serializedBatches, timestamp: Date.now() });
+        await new Promise((resolve, reject) => {
+            addRequest.onsuccess = resolve;
+            addRequest.onerror = reject;
+        });
+        
+        // Esperar a que la transacción termine
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = reject;
+        });
+    } catch (error) {
+        throw new Error('Error al guardar el progreso: ' + error.message);
+    }
 }
 
 async function getStoredProgress() {
