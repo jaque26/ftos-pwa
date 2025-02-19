@@ -93,40 +93,29 @@ async function processBatches(batches) {
 // ========== GESTIÓN DE INDEXEDDB (CORREGIDO) ==========
 async function saveProgress(batches) {
     const db = await openDB();
-    const tx = db.transaction('progress', 'readwrite');
-    const store = tx.objectStore('progress');
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('progress', 'readwrite');
+        const store = tx.objectStore('progress');
 
-    // Convertir lotes a un formato serializable
-    const serializedBatches = await Promise.all(
-        batches.map(async (batch) => {
-            const zipBlob = await batch.generateAsync({ type: 'blob' });
-            return await blobToBase64(zipBlob);
-        })
-    );
-
-    try {
-        // Limpiar antes de añadir
-        const clearRequest = store.clear();
-        await new Promise((resolve, reject) => {
-            clearRequest.onsuccess = resolve;
-            clearRequest.onerror = reject;
-        });
-        
-        // Añadir el nuevo registro
-        const addRequest = store.add({ batches: serializedBatches, timestamp: Date.now() });
-        await new Promise((resolve, reject) => {
-            addRequest.onsuccess = resolve;
-            addRequest.onerror = reject;
-        });
-        
-        // Esperar a que la transacción termine
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
-            tx.onerror = reject;
-        });
-    } catch (error) {
-        throw new Error('Error al guardar el progreso: ' + error.message);
-    }
+        // Convertir lotes a un formato serializable
+        Promise.all(
+            batches.map(async (batch) => {
+                const zipBlob = await batch.generateAsync({ type: 'blob' });
+                return await blobToBase64(zipBlob);
+            })
+        ).then(serializedBatches => {
+            const clearRequest = store.clear();
+            clearRequest.onsuccess = () => {
+                const addRequest = store.add({ batches: serializedBatches, timestamp: Date.now() });
+                addRequest.onsuccess = () => {
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = (event) => reject(new Error('Error al guardar el progreso: ' + event.target.error));
+                };
+                addRequest.onerror = (event) => reject(new Error('Error al añadir el progreso: ' + event.target.error));
+            };
+            clearRequest.onerror = (event) => reject(new Error('Error al limpiar el progreso: ' + event.target.error));
+        }).catch(reject);
+    });
 }
 
 async function getStoredProgress() {
