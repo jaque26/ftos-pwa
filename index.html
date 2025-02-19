@@ -33,11 +33,35 @@
             margin-top: 20px;
             color: #333;
         }
+        /* Nuevos estilos para el panel de logs */
+        #log-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            z-index: 1000;
+            border-top: 2px solid #2ecc71;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            padding: 3px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .log-error {
+            color: red !important;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <button id="start-btn">Iniciar Backup ZIP</button>
     <div id="status"></div>
+    <div id="log-container"></div> <!-- Nuevo panel de logs -->
     <script src="app.js"></script>
 </body>
 </html>
