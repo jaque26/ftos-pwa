@@ -95,9 +95,18 @@ async function saveProgress(batches) {
     const db = await openDB();
     const tx = db.transaction('progress', 'readwrite');
     const store = tx.objectStore('progress');
-    
+
+    // Convertir lotes a un formato serializable
+    const serializedBatches = await Promise.all(
+        batches.map(async (batch) => {
+            const zipBlob = await batch.generateAsync({ type: 'blob' });
+            return await blobToBase64(zipBlob);
+        })
+    );
+
+    // Guardar en IndexedDB
     await store.clear();
-    await store.add({ batches, timestamp: Date.now() });
+    await store.add({ batches: serializedBatches, timestamp: Date.now() });
     await tx.done;
 }
 
@@ -106,8 +115,16 @@ async function getStoredProgress() {
     const tx = db.transaction('progress', 'readonly');
     const store = tx.objectStore('progress');
     const allRecords = await store.getAll();
-    
-    return allRecords.length > 0 ? allRecords[0].batches : [];
+
+    if (allRecords.length === 0) return [];
+
+    // Convertir lotes serializados a objetos JSZip
+    return await Promise.all(
+        allRecords[0].batches.map(async (base64) => {
+            const blob = await base64ToBlob(base64);
+            return await JSZip.loadAsync(blob);
+        })
+    );
 }
 
 async function updateProgress(index) {
@@ -183,4 +200,9 @@ async function blobToBase64(blob) {
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
+}
+
+async function base64ToBlob(base64) {
+    const response = await fetch(`data:application/zip;base64,${base64}`);
+    return await response.blob();
 }
