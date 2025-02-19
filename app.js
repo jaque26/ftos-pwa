@@ -4,19 +4,30 @@ let currentUploads = [];
 document.getElementById('start-btn').addEventListener('click', async () => {
     try {
         if (!window.showDirectoryPicker) {
+            console.log("El navegador no es compatible con showDirectoryPicker.");
             throw new Error('Tu navegador no es compatible. Usa Chrome/Edge en Android.');
         }
 
+        console.log("Seleccionando carpeta...");
         const folderHandle = await window.showDirectoryPicker();
+        console.log("Carpeta seleccionada.");
         alert('✅ Carpeta seleccionada. Escaneando archivos...');
         
+        console.log("Recolectando archivos...");
         const files = await collectFiles(folderHandle);
-        if (files.length === 0) throw new Error('No se encontraron archivos');
+        if (files.length === 0) {
+            console.log("No se encontraron archivos.");
+            throw new Error('No se encontraron archivos');
+        }
         
+        console.log(`Se encontraron ${files.length} archivos.`);
         alert(`📁 ${files.length} archivos encontrados. Creando ZIPs...`);
         const zipBatches = await createZipBatches(files);
+        console.log(`Se crearon ${zipBatches.length} lotes de ZIP.`);
         
+        console.log("Guardando progreso...");
         await saveProgress(zipBatches);
+        console.log("Progreso guardado.");
         alert(`📦 ${zipBatches.length} lotes creados. Iniciando subida...`);
         
         console.log("Antes de procesar lotes");
@@ -34,6 +45,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 // ========== FUNCIONES PRINCIPALES ==========
 async function collectFiles(dirHandle) {
     try {
+        console.log("Iniciando recolección de archivos...");
         let files = [];
         for await (const entry of dirHandle.values()) {
             if (entry.kind === 'file') {
@@ -47,14 +59,17 @@ async function collectFiles(dirHandle) {
                 files = files.concat(await collectFiles(entry));
             }
         }
+        console.log("Ordenando archivos por fecha...");
         return files.sort((a, b) => a.date - b.date);
     } catch (error) {
+        console.error('Error escaneando archivos:', error);
         throw new Error('Error escaneando archivos: ' + error.message);
     }
 }
 
 async function createZipBatches(files) {
     try {
+        console.log("Creando lotes de ZIP...");
         const batches = [];
         let currentBatch = new JSZip();
         let currentSize = 0;
@@ -71,8 +86,10 @@ async function createZipBatches(files) {
         }
 
         if (currentSize > 0) batches.push(currentBatch);
+        console.log("Lotes de ZIP creados.");
         return batches;
     } catch (error) {
+        console.error('Error creando ZIPs:', error);
         throw new Error('Error creando ZIPs: ' + error.message);
     }
 }
@@ -80,13 +97,16 @@ async function createZipBatches(files) {
 async function processBatches(batches) {
     console.log("Iniciando proceso de lotes");
     try {
+        console.log("Obteniendo progreso almacenado...");
         const storedBatches = await getStoredProgress();
         const batchesToProcess = storedBatches.length > 0 ? storedBatches : batches;
 
         for (const [index, batch] of batchesToProcess.entries()) {
             console.log(`Procesando lote ${index}`);
             const zipBlob = await batch.generateAsync({ type: 'blob' });
+            console.log(`Subiendo lote ${index}...`);
             await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
+            console.log(`Actualizando progreso para lote ${index}...`);
             await updateProgress(index);
         }
     } catch (error) {
@@ -110,11 +130,16 @@ async function saveProgress(batches) {
                 return await blobToBase64(zipBlob);
             })
         ).then(serializedBatches => {
+            console.log("Limpiando almacenamiento previo...");
             const clearRequest = store.clear();
             clearRequest.onsuccess = () => {
+                console.log("Añadiendo nuevo progreso...");
                 const addRequest = store.add({ batches: serializedBatches, timestamp: Date.now() });
                 addRequest.onsuccess = () => {
-                    tx.oncomplete = () => resolve();
+                    tx.oncomplete = () => {
+                        console.log("Progreso guardado con éxito.");
+                        resolve();
+                    };
                     tx.onerror = (event) => reject(new Error('Error al guardar el progreso: ' + event.target.error));
                 };
                 addRequest.onerror = (event) => {
@@ -139,9 +164,13 @@ async function getStoredProgress() {
     const store = tx.objectStore('progress');
     const allRecords = await store.getAll();
 
-    if (allRecords.length === 0) return [];
+    if (allRecords.length === 0) {
+        console.log("No hay progreso almacenado.");
+        return [];
+    }
 
     // Convertir lotes serializados a objetos JSZip
+    console.log("Convirtiendo lotes almacenados...");
     return await Promise.all(
         allRecords[0].batches.map(async (base64) => {
             const blob = await base64ToBlob(base64);
@@ -158,6 +187,7 @@ async function updateProgress(index) {
 
     if (allRecords.length > 0) {
         const record = allRecords[0];
+        console.log(`Actualizando progreso, eliminando lote ${index}`);
         record.batches.splice(index, 1);
         await store.put(record);
     }
@@ -171,6 +201,7 @@ async function openDB() {
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains('progress')) {
+                console.log("Creando ObjectStore 'progress'");
                 const store = db.createObjectStore('progress', {
                     keyPath: 'id',
                     autoIncrement: true
@@ -179,8 +210,14 @@ async function openDB() {
             }
         };
 
-        request.onsuccess = (e) => resolve(e.target.result);
-        request.onerror = (e) => reject(e.target.error);
+        request.onsuccess = (e) => {
+            console.log("Base de datos abierta con éxito.");
+            resolve(e.target.result);
+        };
+        request.onerror = (e) => {
+            console.error("Error al abrir la base de datos:", e.target.error);
+            reject(e.target.error);
+        };
     });
 }
 
@@ -192,6 +229,7 @@ async function uploadZip(blob, zipName) {
         const content = await blobToBase64(blob);
 
         if (!token || !token.startsWith('ghp_')) {
+            console.log("Token de GitHub inválido.");
             throw new Error('Token de GitHub inválido');
         }
 
