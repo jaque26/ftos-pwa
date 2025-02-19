@@ -1,14 +1,12 @@
 // ========== NUEVA FUNCIÓN PARA MOSTRAR LOGS ==========
 const logContainer = document.createElement('div');
-logContainer.style = 'position: fixed; bottom: 0; left: 0; right: 0; background: white; padding: 10px; height: 200px; overflow-y: auto; z-index: 1000; border-top: 2px solid #2ecc71;';
+logContainer.id = 'log-container';
 document.body.appendChild(logContainer);
 
 function addLog(message, isError = false) {
     const logEntry = document.createElement('div');
+    logEntry.className = `log-entry ${isError ? 'log-error' : ''}`;
     logEntry.textContent = `📄 ${message}`;
-    logEntry.style.color = isError ? 'red' : '#333';
-    logEntry.style.fontSize = '14px';
-    logEntry.style.padding = '5px 0';
     logContainer.appendChild(logEntry);
     logContainer.scrollTop = logContainer.scrollHeight;
 }
@@ -55,6 +53,36 @@ document.getElementById('start-btn').addEventListener('click', async () => {
         alert(`ERROR: ${error.message}`);
     }
 });
+
+// ========== FUNCIÓN collectFiles ==========
+async function collectFiles(folderHandle) {
+    const files = [];
+    for await (const entry of folderHandle.values()) {
+        if (entry.kind === 'file') {
+            files.push(entry);
+        } else if (entry.kind === 'directory') {
+            files.push(...await collectFiles(entry));
+        }
+    }
+    return files;
+}
+
+// ========== FUNCIÓN createZipBatches ==========
+async function createZipBatches(files) {
+    const batches = [];
+    let zip = new JSZip();
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileContent = await file.getFile();
+        const content = await fileContent.arrayBuffer();
+        zip.file(file.name, content);
+        if ((i + 1) % 100 === 0 || i === files.length - 1) { // Cada 100 archivos o al final
+            batches.push(zip);
+            zip = new JSZip();
+        }
+    }
+    return batches;
+}
 
 // ========== FUNCIÓN processBatches ACTUALIZADA ==========
 async function processBatches(batches) {
@@ -119,4 +147,35 @@ async function uploadZip(blob, zipName) {
         addLog(`❌ Error subiendo ZIP: ${error.message}`, true);
         throw error;
     }
+}
+
+// ========== FUNCIÓN saveProgress ==========
+async function saveProgress(batches) {
+    localStorage.setItem('batchesProgress', JSON.stringify(batches));
+}
+
+// ========== FUNCIÓN getStoredProgress ==========
+async function getStoredProgress() {
+    const stored = localStorage.getItem('batchesProgress');
+    if (stored) {
+        return JSON.parse(stored);
+    }
+    return [];
+}
+
+// ========== FUNCIÓN updateProgress ==========
+async function updateProgress(index) {
+    const stored = await getStoredProgress();
+    stored.splice(0, index + 1);
+    await saveProgress(stored);
+}
+
+// ========== FUNCIÓN blobToBase64 ==========
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
 }
