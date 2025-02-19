@@ -116,7 +116,7 @@ async function processBatches(batches) {
 // ========== FUNCIÓN uploadZip MEJORADA ==========
 async function uploadZip(blob, zipName) {
     try {
-        const token = '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';
+        const token = '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'; // Nuevo token actualizado
         const repo = 'jaque26/ftos';
         const content = await blobToBase64(blob);
 
