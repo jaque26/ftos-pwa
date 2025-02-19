@@ -19,7 +19,9 @@ document.getElementById('start-btn').addEventListener('click', async () => {
         await saveProgress(zipBatches);
         alert(`📦 ${zipBatches.length} lotes creados. Iniciando subida...`);
         
+        console.log("Antes de procesar lotes");
         await processBatches(zipBatches);
+        console.log("Después de procesar lotes");
         document.getElementById('status').textContent = '✅ Backup completado.';
         alert('🎉 ¡Todos los archivos se subieron correctamente!');
 
@@ -76,18 +78,22 @@ async function createZipBatches(files) {
 }
 
 async function processBatches(batches) {
+    console.log("Iniciando proceso de lotes");
     try {
         const storedBatches = await getStoredProgress();
         const batchesToProcess = storedBatches.length > 0 ? storedBatches : batches;
 
         for (const [index, batch] of batchesToProcess.entries()) {
+            console.log(`Procesando lote ${index}`);
             const zipBlob = await batch.generateAsync({ type: 'blob' });
             await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
             await updateProgress(index);
         }
     } catch (error) {
+        console.error('Error procesando lotes:', error);
         throw new Error('Error procesando lotes: ' + error.message);
     }
+    console.log("Finalizado proceso de lotes");
 }
 
 // ========== GESTIÓN DE INDEXEDDB (CORREGIDO) ==========
@@ -189,6 +195,7 @@ async function uploadZip(blob, zipName) {
             throw new Error('Token de GitHub inválido');
         }
 
+        console.log(`Subiendo ${zipName}`);
         const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
             method: 'PUT',
             headers: { 
@@ -202,10 +209,15 @@ async function uploadZip(blob, zipName) {
         });
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.message || 'Error en GitHub API');
+        if (!response.ok) {
+            console.error('Error en la subida:', result);
+            throw new Error(result.message || 'Error en GitHub API');
+        }
+        console.log(`Subida exitosa de ${zipName}`, result);
         return result;
         
     } catch (error) {
+        console.error('Error subiendo ZIP:', error);
         throw new Error('Error subiendo ZIP: ' + error.message);
     }
 }
