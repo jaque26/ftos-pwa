@@ -83,6 +83,12 @@ async function createZipBatches(files) {
 // ========== FUNCIÓN processBatches ACTUALIZADA ==========
 async function processBatches(batches) {
     try {
+        // Limpiar datos antiguos si existen
+        if (localStorage.getItem('batchesProgress')) {
+            localStorage.removeItem('batchesProgress');
+            addLog('⚠️ Limpiando datos de progreso antiguos...');
+        }
+        
         const lastProcessedIndex = await getStoredProgress();
         const startIndex = lastProcessedIndex || 0;
 
@@ -95,10 +101,12 @@ async function processBatches(batches) {
                 addLog(`✔ Lote ${index + 1} subido`);
                 await saveProgress(index);
             } catch (batchError) {
+                await saveProgress(index); // Guardar último índice válido
                 addLog(`❌ Falló el lote ${index + 1}: ${batchError.message}`, true);
                 throw batchError;
             }
         }
+        localStorage.removeItem('lastProcessedIndex'); // Limpiar al finalizar
     } catch (error) {
         addLog('❌ Error en el proceso: ' + error.message, true);
         throw error;
@@ -145,15 +153,24 @@ async function uploadZip(blob, zipName) {
     }
 }
 
-// ========== FUNCIÓN saveProgress ==========
+// ========== FUNCIÓN saveProgress ACTUALIZADA ==========
 function saveProgress(index) {
-    localStorage.setItem('lastProcessedIndex', index.toString());
+    try {
+        localStorage.setItem('lastProcessedIndex', index.toString());
+    } catch (error) {
+        addLog(`⚠️ Error guardando progreso: ${error.message}`, true);
+        throw new Error('No se pudo guardar el progreso');
+    }
 }
 
-// ========== FUNCIÓN getStoredProgress ==========
+// ========== FUNCIÓN getStoredProgress ACTUALIZADA ==========
 function getStoredProgress() {
-    const lastProcessedIndex = localStorage.getItem('lastProcessedIndex');
-    return lastProcessedIndex ? parseInt(lastProcessedIndex) : 0;
+    try {
+        return parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
+    } catch (error) {
+        addLog('⚠️ Error leyendo progreso: ' + error.message, true);
+        return 0;
+    }
 }
 
 // ========== FUNCIÓN blobToBase64 ==========
