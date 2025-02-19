@@ -83,7 +83,6 @@ async function createZipBatches(files) {
 // ========== FUNCIÓN processBatches ACTUALIZADA ==========
 async function processBatches(batches) {
     try {
-        // Limpiar datos antiguos si existen
         if (localStorage.getItem('batchesProgress')) {
             localStorage.removeItem('batchesProgress');
             addLog('⚠️ Limpiando datos de progreso antiguos...');
@@ -101,36 +100,37 @@ async function processBatches(batches) {
                 addLog(`✔ Lote ${index + 1} subido`);
                 await saveProgress(index);
             } catch (batchError) {
-                await saveProgress(index); // Guardar último índice válido
+                await saveProgress(index);
                 addLog(`❌ Falló el lote ${index + 1}: ${batchError.message}`, true);
                 throw batchError;
             }
         }
-        localStorage.removeItem('lastProcessedIndex'); // Limpiar al finalizar
+        localStorage.removeItem('lastProcessedIndex');
     } catch (error) {
         addLog('❌ Error en el proceso: ' + error.message, true);
         throw error;
     }
 }
 
-// ========== FUNCIÓN uploadZip MEJORADA ==========
+// ========== FUNCIÓN uploadZip SEGURA ==========
 async function uploadZip(blob, zipName) {
     try {
-        const token = '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'; // Nuevo token actualizado
+        const token = prompt('🔑 Ingresa tu token de GitHub:');
         const repo = 'jaque26/ftos';
         const content = await blobToBase64(blob);
 
         if (!token) {
-            addLog('❌ Token de GitHub faltante', true);
-            throw new Error('Token no configurado');
+            addLog('❌ Operación cancelada: Token requerido', true);
+            throw new Error('Token no ingresado');
         }
 
         addLog(`Subiendo ${zipName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
         const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
             method: 'PUT',
             headers: { 
-                'Authorization': `token ${token}`, 
-                'Content-Type': 'application/json'
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Backup-PWA'
             },
             body: JSON.stringify({ 
                 message: 'Backup automático', 
@@ -153,7 +153,7 @@ async function uploadZip(blob, zipName) {
     }
 }
 
-// ========== FUNCIÓN saveProgress ACTUALIZADA ==========
+// ========== FUNCIONES AUXILIARES ==========
 function saveProgress(index) {
     try {
         localStorage.setItem('lastProcessedIndex', index.toString());
@@ -163,7 +163,6 @@ function saveProgress(index) {
     }
 }
 
-// ========== FUNCIÓN getStoredProgress ACTUALIZADA ==========
 function getStoredProgress() {
     try {
         return parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
@@ -173,7 +172,6 @@ function getStoredProgress() {
     }
 }
 
-// ========== FUNCIÓN blobToBase64 ==========
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
