@@ -151,14 +151,21 @@ async function uploadZip(blob, zipName) {
 
 // ========== FUNCIÓN saveProgress ==========
 async function saveProgress(batches) {
-    localStorage.setItem('batchesProgress', JSON.stringify(batches));
+    const serializedBatches = await Promise.all(batches.map(async (batch) => {
+        return await batch.generateAsync({ type: "base64" });
+    }));
+    localStorage.setItem('batchesProgress', JSON.stringify(serializedBatches));
 }
 
 // ========== FUNCIÓN getStoredProgress ==========
 async function getStoredProgress() {
     const stored = localStorage.getItem('batchesProgress');
     if (stored) {
-        return JSON.parse(stored);
+        return JSON.parse(stored).map(base64 => {
+            const zip = new JSZip();
+            zip.loadAsync(base64);
+            return zip;
+        });
     }
     return [];
 }
