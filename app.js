@@ -111,10 +111,19 @@ async function saveProgress(batches) {
                     tx.oncomplete = () => resolve();
                     tx.onerror = (event) => reject(new Error('Error al guardar el progreso: ' + event.target.error));
                 };
-                addRequest.onerror = (event) => reject(new Error('Error al añadir el progreso: ' + event.target.error));
+                addRequest.onerror = (event) => {
+                    tx.abort();
+                    reject(new Error('Error al añadir el progreso: ' + event.target.error));
+                };
             };
-            clearRequest.onerror = (event) => reject(new Error('Error al limpiar el progreso: ' + event.target.error));
-        }).catch(reject);
+            clearRequest.onerror = (event) => {
+                tx.abort();
+                reject(new Error('Error al limpiar el progreso: ' + event.target.error));
+            };
+        }).catch(error => {
+            tx.abort();
+            reject(new Error('Error al serializar los lotes: ' + error.message));
+        });
     });
 }
 
