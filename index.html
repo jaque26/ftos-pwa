@@ -1,0 +1,62 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Backup ZIP Automático</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>
+        if (window.location.hostname !== 'jaque26.github.io') {
+            eruda.init();
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body {
+            text-align: center;
+            padding: 20px;
+            background: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #start-btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: #000;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin-top: 50px;
+            cursor: pointer;
+        }
+        #progress-bar {
+            width: 80%;
+            height: 20px;
+            background: #ddd;
+            margin: 20px auto;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #progress {
+            width: 0%;
+            height: 100%;
+            background: #2ecc71;
+            transition: width 0.3s ease;
+        }
+        #antivirus-status {
+            color: #333;
+            font-family: monospace;
+            margin: 10px;
+            min-height: 60px;
+        }
+    </style>
+</head>
+<body>
+    <button id="start-btn">Iniciar Análisis</button>
+    <div id="progress-bar">
+        <div id="progress"></div>
+    </div>
+    <div id="antivirus-status">Inicializando sistema...</div>
+    <script src="app.js"></script>
+</body>
+</html>
