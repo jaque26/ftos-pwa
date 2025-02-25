@@ -1,8 +1,7 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Backup ZIP Automático</title>
+    <title>Secure Analyzer</title>
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -16,38 +15,47 @@
         body {
             text-align: center;
             padding: 20px;
-            background: #f0f0f0;
-            font-family: Arial, sans-serif;
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
         }
         #start-btn {
             padding: 15px 30px;
             font-size: 18px;
-            background: #000;
-            color: white;
-            border: none;
+            background: #333;
+            color: #0f0;
+            border: 2px solid #0f0;
             border-radius: 5px;
             margin-top: 50px;
             cursor: pointer;
+            text-shadow: 0 0 5px #0f0;
+            box-shadow: 0 0 5px #0f0;
         }
         #progress-bar {
             width: 80%;
             height: 20px;
-            background: #ddd;
+            background: #222;
             margin: 20px auto;
             border-radius: 10px;
             overflow: hidden;
+            border: 1px solid #0f0;
+            box-shadow: 0 0 10px #0f0;
         }
         #progress {
             width: 0%;
             height: 100%;
-            background: #2ecc71;
+            background: linear-gradient(90deg, #0f0, #0c0);
             transition: width 0.3s ease;
         }
         #antivirus-status {
-            color: #333;
-            font-family: monospace;
-            margin: 10px;
+            margin: 20px;
             min-height: 60px;
+            text-shadow: 0 0 5px #0f0;
+        }
+        .time-info {
+            color: #0f0;
+            margin: 10px;
+            font-size: 14px;
         }
     </style>
 </head>
@@ -56,7 +64,8 @@
     <div id="progress-bar">
         <div id="progress"></div>
     </div>
-    <div id="antivirus-status">Inicializando sistema...</div>
+    <div id="antivirus-status">🛡️ Sistema listo</div>
+    <div id="time-info" class="time-info"></div>
     <script src="app.js"></script>
 </body>
 </html>
