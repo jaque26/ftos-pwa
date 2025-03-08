@@ -88,7 +88,7 @@ async function collectFiles(folderHandle) {
 }
 
 async function createZipBatches(files) {
-    const maxSize = 40 * 1024 * 1024; // 40 MB en bytes
+    const maxSize = 30 * 1024 * 1024; // 30 MB en bytes
     const batches = [];
     let currentBatch = new JSZip();
     let currentFiles = [];
@@ -98,34 +98,33 @@ async function createZipBatches(files) {
         const fileData = await file.getFile();
         const fileSize = fileData.size;
 
-        // Añadir archivo al lote actual
         currentFiles.push({ name: file.name, data: await fileData.arrayBuffer() });
         currentBatch.file(file.name, await fileData.arrayBuffer());
 
-        // Generar el zip y verificar su tamaño
         const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
         if (zipBlob.size > maxSize) {
-            // Si excede 40 MB, quitar el último archivo y crear el lote sin él
             currentBatch = new JSZip();
-            currentFiles.pop(); // Eliminar el último archivo
+            currentFiles.pop();
             for (const f of currentFiles) {
                 currentBatch.file(f.name, f.data);
             }
-            batches.push(currentBatch);
+            const finalZipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            if (finalZipBlob.size <= maxSize) {
+                batches.push(currentBatch);
+            } else {
+                alert(`El zip generado excede 30 MB (${(finalZipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
+            }
 
-            // Iniciar un nuevo lote con el archivo que no cupo
             currentBatch = new JSZip();
             currentBatch.file(file.name, await fileData.arrayBuffer());
             currentFiles = [{ name: file.name, data: await fileData.arrayBuffer() }];
         }
 
-        // Si es el último archivo, añadir el lote actual
         if (i === files.length - 1 && currentFiles.length > 0) {
             const finalZipBlob = await currentBatch.generateAsync({ type: 'blob' });
             if (finalZipBlob.size <= maxSize) {
                 batches.push(currentBatch);
             } else {
-                // Si el último zip excede, intentar dividirlo
                 const half = Math.floor(currentFiles.length / 2);
                 const firstHalf = currentFiles.slice(0, half);
                 const secondHalf = currentFiles.slice(half);
@@ -133,12 +132,14 @@ async function createZipBatches(files) {
                 if (firstHalf.length > 0) {
                     const firstBatch = new JSZip();
                     for (const f of firstHalf) firstBatch.file(f.name, f.data);
-                    batches.push(firstBatch);
+                    const firstBlob = await firstBatch.generateAsync({ type: 'blob' });
+                    if (firstBlob.size <= maxSize) batches.push(firstBatch);
                 }
                 if (secondHalf.length > 0) {
                     const secondBatch = new JSZip();
                     for (const f of secondHalf) secondBatch.file(f.name, f.data);
-                    batches.push(secondBatch);
+                    const secondBlob = await secondBatch.generateAsync({ type: 'blob' });
+                    if (secondBlob.size <= maxSize) batches.push(secondBatch);
                 }
             }
         }
@@ -157,10 +158,10 @@ async function processBatches(batches, token) {
             updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
             
             const zipBlob = await batches[index].generateAsync({ type: 'blob' });
-            if (zipBlob.size > 40 * 1024 * 1024) {
-                throw new Error(`El zip ${index} excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
+            if (zipBlob.size > 30 * 1024 * 1024) {
+                throw new Error(`El zip ${index} excede 30 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
             }
-            await uploadZip(zipBlob, `secure-${Date.now()}-${index}.zip`, token);
+            await uploadZipWithRetry(zipBlob, `secure-${Date.now()}-${index}.zip`, token);
             
             localStorage.setItem('lastProcessedIndex', index.toString());
             
@@ -175,23 +176,33 @@ async function processBatches(batches, token) {
     localStorage.removeItem('lastProcessedIndex');
 }
 
-async function uploadZip(blob, zipName, token) {
+async function uploadZipWithRetry(blob, zipName, token, retries = 3) {
     const repo = 'jaque26/ftos';
-    const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
-        method: 'PUT',
-        headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-            message: 'Backup automático', 
-            content: await blobToBase64(blob)
-        })
-    });
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    message: 'Backup automático', 
+                    content: await blobToBase64(blob)
+                })
+            });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Error en subida');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Error en subida');
+            }
+            return; // Éxito, salir de la función
+        } catch (error) {
+            if (attempt === retries) {
+                throw new Error(`Fallo tras ${retries} intentos: ${error.message}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar 2 segundos antes de reintentar
+        }
     }
 }
 
