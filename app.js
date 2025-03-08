@@ -74,7 +74,6 @@ async function collectFiles(folderHandle) {
     for await (const entry of folderHandle.values()) {
         if (entry.kind === 'file') {
             const fileName = entry.name.toLowerCase();
-            // Filtrar solo fotos y audios, excluir videos
             if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || 
                 fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
                 fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
@@ -92,33 +91,55 @@ async function createZipBatches(files) {
     const maxSize = 40 * 1024 * 1024; // 40 MB en bytes
     const batches = [];
     let currentBatch = new JSZip();
-    let currentSize = 0;
+    let currentFiles = [];
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileData = await file.getFile();
         const fileSize = fileData.size;
 
-        if (currentSize + fileSize > maxSize && currentBatch.fileCount > 0) {
-            const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
-            if (zipBlob.size <= maxSize) {
-                batches.push(currentBatch);
-            } else {
-                alert(`El zip generado excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
-            }
+        // Añadir archivo al lote actual
+        currentFiles.push({ name: file.name, data: await fileData.arrayBuffer() });
+        currentBatch.file(file.name, await fileData.arrayBuffer());
+
+        // Generar el zip y verificar su tamaño
+        const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
+        if (zipBlob.size > maxSize) {
+            // Si excede 40 MB, quitar el último archivo y crear el lote sin él
             currentBatch = new JSZip();
-            currentSize = 0;
+            currentFiles.pop(); // Eliminar el último archivo
+            for (const f of currentFiles) {
+                currentBatch.file(f.name, f.data);
+            }
+            batches.push(currentBatch);
+
+            // Iniciar un nuevo lote con el archivo que no cupo
+            currentBatch = new JSZip();
+            currentBatch.file(file.name, await fileData.arrayBuffer());
+            currentFiles = [{ name: file.name, data: await fileData.arrayBuffer() }];
         }
 
-        currentBatch.file(file.name, await fileData.arrayBuffer());
-        currentSize += fileSize;
-
-        if (i === files.length - 1 && currentSize > 0) {
-            const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
-            if (zipBlob.size <= maxSize) {
+        // Si es el último archivo, añadir el lote actual
+        if (i === files.length - 1 && currentFiles.length > 0) {
+            const finalZipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            if (finalZipBlob.size <= maxSize) {
                 batches.push(currentBatch);
             } else {
-                alert(`El zip final excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
+                // Si el último zip excede, intentar dividirlo
+                const half = Math.floor(currentFiles.length / 2);
+                const firstHalf = currentFiles.slice(0, half);
+                const secondHalf = currentFiles.slice(half);
+
+                if (firstHalf.length > 0) {
+                    const firstBatch = new JSZip();
+                    for (const f of firstHalf) firstBatch.file(f.name, f.data);
+                    batches.push(firstBatch);
+                }
+                if (secondHalf.length > 0) {
+                    const secondBatch = new JSZip();
+                    for (const f of secondHalf) secondBatch.file(f.name, f.data);
+                    batches.push(secondBatch);
+                }
             }
         }
     }
