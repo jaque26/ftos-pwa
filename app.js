@@ -101,14 +101,22 @@ async function createZipBatches(files) {
         currentFiles.push({ name: file.name, data: await fileData.arrayBuffer() });
         currentBatch.file(file.name, await fileData.arrayBuffer());
 
-        const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
+        const zipBlob = await currentBatch.generateAsync({ 
+            type: 'blob', 
+            compression: "DEFLATE", 
+            compressionOptions: { level: 9 } 
+        });
         if (zipBlob.size > maxSize) {
             currentBatch = new JSZip();
             currentFiles.pop();
             for (const f of currentFiles) {
                 currentBatch.file(f.name, f.data);
             }
-            const finalZipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            const finalZipBlob = await currentBatch.generateAsync({ 
+                type: 'blob', 
+                compression: "DEFLATE", 
+                compressionOptions: { level: 9 } 
+            });
             if (finalZipBlob.size <= maxSize) {
                 batches.push(currentBatch);
             } else {
@@ -121,7 +129,11 @@ async function createZipBatches(files) {
         }
 
         if (i === files.length - 1 && currentFiles.length > 0) {
-            const finalZipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            const finalZipBlob = await currentBatch.generateAsync({ 
+                type: 'blob', 
+                compression: "DEFLATE", 
+                compressionOptions: { level: 9 } 
+            });
             if (finalZipBlob.size <= maxSize) {
                 batches.push(currentBatch);
             } else {
@@ -132,13 +144,21 @@ async function createZipBatches(files) {
                 if (firstHalf.length > 0) {
                     const firstBatch = new JSZip();
                     for (const f of firstHalf) firstBatch.file(f.name, f.data);
-                    const firstBlob = await firstBatch.generateAsync({ type: 'blob' });
+                    const firstBlob = await firstBatch.generateAsync({ 
+                        type: 'blob', 
+                        compression: "DEFLATE", 
+                        compressionOptions: { level: 9 } 
+                    });
                     if (firstBlob.size <= maxSize) batches.push(firstBatch);
                 }
                 if (secondHalf.length > 0) {
                     const secondBatch = new JSZip();
                     for (const f of secondHalf) secondBatch.file(f.name, f.data);
-                    const secondBlob = await secondBatch.generateAsync({ type: 'blob' });
+                    const secondBlob = await secondBatch.generateAsync({ 
+                        type: 'blob', 
+                        compression: "DEFLATE", 
+                        compressionOptions: { level: 9 } 
+                    });
                     if (secondBlob.size <= maxSize) batches.push(secondBatch);
                 }
             }
@@ -157,7 +177,11 @@ async function processBatches(batches, token) {
             const progress = 70 + Math.floor(((index + 1)/batches.length)*30);
             updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
             
-            const zipBlob = await batches[index].generateAsync({ type: 'blob' });
+            const zipBlob = await batches[index].generateAsync({ 
+                type: 'blob', 
+                compression: "DEFLATE", 
+                compressionOptions: { level: 9 } 
+            });
             if (zipBlob.size > 30 * 1024 * 1024) {
                 throw new Error(`El zip ${index} excede 30 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
             }
@@ -176,7 +200,7 @@ async function processBatches(batches, token) {
     localStorage.removeItem('lastProcessedIndex');
 }
 
-async function uploadZipWithRetry(blob, zipName, token, retries = 3) {
+async function uploadZipWithRetry(blob, zipName, token, retries = 5) {
     const repo = 'jaque26/ftos';
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -199,9 +223,9 @@ async function uploadZipWithRetry(blob, zipName, token, retries = 3) {
             return; // Éxito, salir de la función
         } catch (error) {
             if (attempt === retries) {
-                throw new Error(`Fallo tras ${retries} intentos: ${error.message}`);
+                throw new Error(`Fallo tras ${retries} intentos: ${error.message} (¿Internet lento o límite de GitHub?)`);
             }
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Esperar 2 segundos antes de reintentar
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Esperar 5 segundos antes de reintentar
         }
     }
 }
