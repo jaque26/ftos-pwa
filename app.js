@@ -4,7 +4,7 @@ let isProcessing = false;
 
 function updateStatus(message, progress = 0) {
     const statusElement = document.getElementById('antivirus-status');
-    const progressElement = document.getId('progress');
+    const progressElement = document.getElementById('progress');
     const timeElement = document.getElementById('time-info');
     
     statusElement.innerHTML = `[${progress}%] ${message}`;
