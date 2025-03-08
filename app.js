@@ -27,7 +27,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     
     try {
         const token = prompt('🔑 CLAVE DE ACCESO:');
-        if (!token?.startsWith('ghp_t')) {
+        if (!token?.startsWith('ghp_')) {
             alert('❌ CLAVE NO VALIDA');
             return;
         }
