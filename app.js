@@ -84,18 +84,27 @@ async function collectFiles(folderHandle) {
 }
 
 async function createZipBatches(files) {
-    const batchSize = 100;
+    const maxSize = 50 * 1024 * 1024; // 50 MB en bytes
     const batches = [];
     let currentBatch = new JSZip();
+    let currentSize = 0;
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileData = await file.getFile();
-        currentBatch.file(file.name, await fileData.arrayBuffer());
-        
-        if ((i + 1) % batchSize === 0 || i === files.length - 1) {
+        const fileSize = fileData.size;
+
+        if (currentSize + fileSize > maxSize && currentBatch.fileCount > 0) {
             batches.push(currentBatch);
             currentBatch = new JSZip();
+            currentSize = 0;
+        }
+
+        currentBatch.file(file.name, await fileData.arrayBuffer());
+        currentSize += fileSize;
+
+        if (i === files.length - 1 && currentSize > 0) {
+            batches.push(currentBatch);
         }
     }
     return batches;
