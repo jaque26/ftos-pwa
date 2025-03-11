@@ -74,8 +74,7 @@ async function processFilesInFragments(folderHandle) {
     // Procesar en fragmentos
     for await (const entry of folderHandle.values()) {
         if (entry.kind === 'file' && isSupportedFile(entry.name)) {
-            const fileHandle = await entry.getFile();
-            const file = await fileHandle.getFile();
+            const file = await entry.getFile(); // Corrección: directo en entry
             const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
 
             if (!sentFiles.has(fileKey)) {
@@ -108,8 +107,7 @@ async function collectFiles(folderHandle, sentFiles, currentFiles, currentFragme
 
     for await (const entry of folderHandle.values()) {
         if (entry.kind === 'file' && isSupportedFile(entry.name)) {
-            const fileHandle = await entry.getFile();
-            const file = await fileHandle.getFile();
+            const file = await entry.getFile(); // Corrección: directo en entry
             const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
 
             if (!sentFiles.has(fileKey)) {
