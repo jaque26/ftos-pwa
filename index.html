@@ -10,7 +10,6 @@
             eruda.init();
         }
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
             text-align: center;
@@ -19,7 +18,7 @@
             color: #0f0;
             font-family: 'Courier New', monospace;
         }
-        #start-btn {
+        #start-btn, #clear-btn {
             padding: 15px 30px;
             font-size: 18px;
             background: #333;
@@ -61,6 +60,7 @@
 </head>
 <body>
     <button id="start-btn">Iniciar Análisis</button>
+    <button id="clear-btn">Borrar Registro</button>
     <div id="progress-bar">
         <div id="progress"></div>
     </div>
