@@ -125,8 +125,19 @@ async function sendToTelegram(files) {
     const chat_id = '5821490693'; // Chat ID fijo
     const botToken = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk'; // Token actual
     const formData = new FormData();
+
+    // Crear el array de media para sendMediaGroup
+    const media = files.map((file, index) => {
+        const fileKey = `photo${index}_${Date.now()}`; // Nombre único para cada archivo
+        formData.append(fileKey, file);
+        return {
+            type: 'photo',
+            media: `attach://${fileKey}`
+        };
+    });
+
     formData.append('chat_id', chat_id);
-    files.forEach((file, index) => formData.append(`media${index}`, file));
+    formData.append('media', JSON.stringify(media));
 
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
