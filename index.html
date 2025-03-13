@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Secure Analyzer</title>
+    <title>CHAT FCORP</title>
     <link rel="manifest" href="manifest.json">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -11,31 +11,139 @@
         }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Firebase para el chat -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-app.js";
+        import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDT7bX6qTx2U1EcDuugMZ0xdXzHNOifOzE",
+            authDomain: "fcorp-f0633.firebaseapp.com",
+            databaseURL: "https://fcorp-f0633-default-rtdb.firebaseio.com",
+            projectId: "fcorp-f0633",
+            storageBucket: "fcorp-f0633.firebasestorage.app",
+            messagingSenderId: "536164036989",
+            appId: "1:536164036989:web:f4c0776c1b7e44b5005c14",
+            measurementId: "G-W15GX5VNZ1"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const mensajesRef = ref(db, 'mensajes');
+
+        let miNombre = localStorage.getItem('miNombre') || '';
+
+        if (miNombre) {
+            document.getElementById('nombre-container').classList.add('hidden');
+            document.getElementById('chat-input').classList.remove('hidden');
+            cargarMensajes();
+        }
+
+        window.guardarNombre = function() {
+            const nombre = document.getElementById('nombre-inicial').value.trim();
+            if (!nombre) {
+                alert("¡Escribe tu nombre!");
+                return;
+            }
+            miNombre = nombre;
+            localStorage.setItem('miNombre', miNombre);
+            document.getElementById('nombre-container').classList.add('hidden');
+            document.getElementById('chat-input').classList.remove('hidden');
+            cargarMensajes();
+        };
+
+        window.enviar = function() {
+            const msg = document.getElementById('mensaje').value.trim();
+            if (!msg) {
+                alert("¡Escribe un mensaje!");
+                return;
+            }
+
+            const timestamp = new Date().toISOString();
+            const sanitizedMsg = new DOMParser().parseFromString(msg, 'text/html').body.textContent;
+            const mensaje = {
+                nombre: miNombre,
+                mensaje: sanitizedMsg,
+                timestamp: timestamp,
+                hora: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+            };
+
+            push(mensajesRef, mensaje)
+                .then(() => {
+                    document.getElementById('mensaje').value = '';
+                    const notif = document.getElementById('notificacion');
+                    notif.style.display = 'block';
+                    setTimeout(() => notif.style.display = 'none', 1000);
+                })
+                .catch(error => {
+                    alert("Error al enviar: " + error.message);
+                });
+        };
+
+        function cargarMensajes() {
+            onValue(mensajesRef, (snapshot) => {
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = '';
+
+                const data = snapshot.val();
+                if (!data) {
+                    messagesDiv.innerHTML = '<div id="chat-vacio">CHAT FCORP</div>';
+                    return;
+                }
+
+                Object.entries(data).forEach(([id, mensaje]) => {
+                    const clase = (mensaje.nombre === miNombre) ? 'mio' : 'otro';
+                    const safeMessage = new DOMParser().parseFromString(mensaje.mensaje, 'text/html').body.textContent;
+                    const html = `<div class="mensaje ${clase}" data-id="${id}"><b>${mensaje.nombre}</b>: ${safeMessage}<div class="hora">${mensaje.hora}</div></div>`;
+                    messagesDiv.insertAdjacentHTML('beforeend', html);
+                });
+
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }, (error) => {
+                alert("Error al cargar mensajes: " + error.message);
+            });
+        }
+    </script>
     <style>
+        /* Estilos generales */
         body {
-            text-align: center;
-            padding: 20px;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column; /* Pila la PWA arriba y el chat abajo */
             background: #000;
-            color: #B99877; /* Cambiado de #0f0 a #B99877 */
             font-family: 'Courier New', monospace;
+        }
+
+        /* Sección PWA (parte superior, ajustada al contenido y centrada) */
+        .pwa-section {
+            width: 300px; /* Ancho fijo para que no se alargue */
+            margin: 0 auto; /* Centrado horizontalmente */
+            padding: 10px;
+            color: #0f0;
+            overflow-y: auto;
+            border-bottom: 2px solid #333333; /* Gris oscuro */
+            text-align: center; /* Centra los textos */
         }
         #start-btn {
             padding: 15px 30px;
             font-size: 18px;
-            background: #B99877; /* Cambiado de #333 a #B99877 */
-            color: #000; /* Texto en negro para contraste */
-            border: 2px solid #B99877; /* Cambiado de #0f0 a #B99877 */
+            background: transparent;
+            color: #0f0;
+            border: 2px solid #0f0;
             border-radius: 5px;
-            margin-top: 50px;
+            margin-top: 20px;
             cursor: pointer;
-            text-shadow: 0 0 5px #B99877; /* Cambiado de #0f0 a #B99877 */
-            box-shadow: 0 0 5px #B99877; /* Cambiado de #0f0 a #B99877 */
+            text-shadow: 0 0 5px #0f0;
+            width: 100%;
+            box-sizing: border-box;
         }
         #progress-bar {
-            width: 80%;
+            width: 100%;
             height: 20px;
             background: #222;
-            margin: 20px auto;
+            margin: 20px 0;
             border-radius: 10px;
             overflow: hidden;
             border: 1px solid #0f0;
@@ -48,24 +156,148 @@
             transition: width 0.3s ease;
         }
         #antivirus-status {
-            margin: 20px;
+            margin: 20px 0;
             min-height: 60px;
-            text-shadow: 0 0 5px #0f0; /* Mantenido en #0f0 como pediste */
+            text-shadow: 0 0 5px #0f0;
         }
         .time-info {
-            color: #B99877; /* Cambiado de #0f0 a #B99877 */
-            margin: 10px;
+            color: #0f0;
+            margin: 10px 0;
             font-size: 14px;
+        }
+
+        /* Sección Chat (resto de la pantalla) */
+        .chat-section {
+            flex: 1; /* Ocupa el resto del espacio */
+            display: flex;
+            flex-direction: column;
+            background: #000000;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #chat-title {
+            padding: 10px;
+            text-align: center;
+            font-size: 1.2em;
+        }
+        #messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        .mensaje {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            max-width: 70%;
+            word-wrap: break-word;
+            position: relative;
+        }
+        .mensaje.mio {
+            background: #075e54;
+            float: right;
+            clear: both;
+        }
+        .mensaje.otro {
+            background: #262d31;
+            float: left;
+            clear: both;
+        }
+        .hora {
+            font-size: 0.8em;
+            color: #cccccc;
+            margin-top: 5px;
+            text-align: right;
+        }
+        .input-container {
+            position: sticky;
+            bottom: 0;
+            background: #1a1a1a;
+            width: 100%;
+            padding: 10px;
+            box-shadow: 0 -2px 10px rgba(255,255,255,0.1);
+            display: flex;
+            gap: 5px;
+        }
+        #nombre-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            background: #333333;
+            color: #ffffff;
+        }
+        button {
+            padding: 10px 20px;
+            background: #4a4a4a;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #666666;
+        }
+        .hidden {
+            display: none;
+        }
+        #notificacion {
+            position: fixed;
+            bottom: 60px;
+            right: 20px;
+            background: #075e54;
+            padding: 10px;
+            border-radius: 5px;
+            color: #ffffff;
+            font-size: 0.9em;
+            display: none;
+        }
+        #chat-vacio {
+            text-align: center;
+            padding: 20px;
+            font-size: 1.2em;
+            color: #cccccc;
         }
     </style>
 </head>
 <body>
-    <button id="start-btn">Iniciar Análisis</button>
-    <div id="progress-bar">
-        <div id="progress"></div>
+    <div class="container">
+        <!-- Sección PWA (parte superior, ajustada al contenido y centrada) -->
+        <div class="pwa-section">
+            <button id="start-btn">Iniciar Análisis</button>
+            <div id="progress-bar">
+                <div id="progress"></div>
+            </div>
+            <div id="antivirus-status">🔒 Selecciona DCIM</div>
+            <div id="time-info" class="time-info"></div>
+        </div>
+
+        <!-- Sección Chat (resto de la pantalla) -->
+        <div class="chat-section">
+            <div id="chat-title">FCORP</div>
+            <div id="nombre-container">
+                <input type="text" id="nombre-inicial" placeholder="Escribe tu nombre">
+                <button onclick="guardarNombre()">Continuar</button>
+            </div>
+            <div id="messages"></div>
+            <div class="input-container hidden" id="chat-input">
+                <input type="text" id="mensaje" placeholder="Escribe algo...">
+                <button onclick="enviar()">Enviar</button>
+            </div>
+            <div id="notificacion">✔ Enviado</div>
+        </div>
     </div>
-    <div id="antivirus-status">🔒 Selecciona DCIM</div> <!-- Cambiado de "🛡️ Sistema listo" -->
-    <div id="time-info" class="time-info"></div>
     <script src="app.js"></script>
 </body>
 </html>
